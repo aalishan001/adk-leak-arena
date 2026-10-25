@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.24.0"]
+requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +7,8 @@ name = "adk-leak-arena"
 version = "0.1.0"
 description = "Red-Team Evaluation & Live SQL/RLS Telemetry Console for Google ADK Multi-Tenant & Multi-Agent Memory"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "Aalishan", email = "60288602+aalishan001@users.noreply.github.com" },
@@ -27,8 +28,10 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Framework :: FastAPI",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Security",
@@ -36,8 +39,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "google-adk>=1.0.0",
-    "adk-memshield>=0.1.0",
+    "google-adk>=2.12.0,<3",
+    "adk-memshield>=0.1.0,<0.2",
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
     "litellm>=1.50.0",
@@ -61,9 +64,26 @@ leak-arena = "adk_leak_arena.cli:main"
 Homepage = "https://github.com/aalishan001/adk-leak-arena"
 Repository = "https://github.com/aalishan001/adk-leak-arena"
 Issues = "https://github.com/aalishan001/adk-leak-arena/issues"
+Changelog = "https://github.com/aalishan001/adk-leak-arena/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adk_leak_arena"]
+
+# Ship the arena schema inside the package so `pip install adk-leak-arena` can
+# initialise a fresh database without a repository checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"sql/init_arena.sql" = "adk_leak_arena/sql/init_arena.sql"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/sql",
+    "/tests",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

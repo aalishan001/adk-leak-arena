@@ -226,10 +226,19 @@ def probe_db_security_posture(config: ArenaConfig, *, refresh: bool = False) -> 
     return posture
 
 
+def _arena_schema_path() -> Path:
+    """Locate init_arena.sql: bundled in the wheel, or at the repository root in a checkout."""
+    here = Path(__file__).resolve()
+    for candidate in (here.parent / "sql" / "init_arena.sql", here.parents[2] / "sql" / "init_arena.sql"):
+        if candidate.exists():
+            return candidate
+    return here.parent / "sql" / "init_arena.sql"
+
+
 def ensure_schema_and_seed(config: ArenaConfig) -> dict[str, Any]:
     """Ensure arena tables exist, truncate existing rows, and seed the deterministic dataset."""
     t0 = time.perf_counter()
-    sql_path = Path(__file__).resolve().parents[2] / "sql" / "init_arena.sql"
+    sql_path = _arena_schema_path()
 
     # Try admin DSN first to apply schema if needed; fallback to app DSN
     try:

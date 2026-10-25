@@ -13,8 +13,8 @@ WORKDIR /app
 
 # Install PyPI dependencies including adk-memshield>=0.1.0 and google-adk
 RUN pip install --no-cache-dir \
-    "adk-memshield>=0.1.0" \
-    "google-adk>=1.0.0" \
+    "adk-memshield>=0.1.0,<0.2" \
+    "google-adk>=2.12.0,<3" \
     "fastapi>=0.115.0" \
     "uvicorn>=0.32.0" \
     "litellm>=1.50.0" \

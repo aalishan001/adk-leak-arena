@@ -180,8 +180,8 @@ def render_performance_box(report: dict[str, Any], *, color: bool, width: int = 
     if perf.get("rls_equal_or_faster_p50"):
         add(
             "Note: RLS is equal or faster at p50. Policy predicates filter rows before the vector "
-            "distance sort; at larger seed sizes the planner serves them from the B-tree "
-            "idx_memories_scope_lookup (bitmap index scan), so fewer distances are computed.",
+            "distance sort, so fewer distances are computed; once table statistics exist the "
+            "planner can serve them from the B-tree idx_memories_scope_lookup (bitmap index scan).",
             "dim",
         )
     else:
