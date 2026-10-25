@@ -1,0 +1,6 @@
+# started 2026-10-25T23:44:40Z | commit 850c3f3482508b0b592a9698b0991b1113a21af9 | command: docker exec -i adk_leak_arena_web python - < NOTES/nul_byte_repro.py
+part 1: psycopg.DataError - PostgreSQL text fields cannot contain NUL (0x00) bytes
+    <stdin>:27 in <module>
+    /app/src/adk_leak_arena/unprotected_service.py:385 in _search_memory_sync
+    psycopg/cursor.py:117 in execute
+part 2: turn completed with 1 event(s), no exception raised; memory block in model prompt: False

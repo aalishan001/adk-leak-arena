@@ -1,0 +1,64 @@
+# started 2026-10-25T23:42:30Z | commit 850c3f3482508b0b592a9698b0991b1113a21af9 | command: docker exec adk_leak_arena_web pytest -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.4.1, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 45 items
+
+tests/test_arena_e2e.py::test_dataset_shape PASSED                       [  2%]
+tests/test_arena_e2e.py::test_canary_authorization_is_caller_relative PASSED [  4%]
+tests/test_arena_e2e.py::test_ui_and_state_endpoints PASSED              [  6%]
+tests/test_arena_e2e.py::test_reset_endpoint PASSED                      [  8%]
+tests/test_arena_e2e.py::test_all_five_attack_scenarios_unprotected_leaks_vs_memshield_isolated[S1] PASSED [ 11%]
+tests/test_arena_e2e.py::test_all_five_attack_scenarios_unprotected_leaks_vs_memshield_isolated[S2] PASSED [ 13%]
+tests/test_arena_e2e.py::test_all_five_attack_scenarios_unprotected_leaks_vs_memshield_isolated[S3] PASSED [ 15%]
+tests/test_arena_e2e.py::test_all_five_attack_scenarios_unprotected_leaks_vs_memshield_isolated[S4] PASSED [ 17%]
+tests/test_arena_e2e.py::test_all_five_attack_scenarios_unprotected_leaks_vs_memshield_isolated[S5] PASSED [ 20%]
+tests/test_arena_e2e.py::test_exec_agent_clearance_rbac PASSED           [ 22%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body0] PASSED [ 24%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body1] PASSED [ 26%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body2] PASSED [ 28%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body3] PASSED [ 31%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body4] PASSED [ 33%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body5] PASSED [ 35%]
+tests/test_arena_e2e.py::test_attack_rejects_malformed_input_with_422[body6] PASSED [ 37%]
+tests/test_arena_e2e.py::test_attack_rejects_lone_surrogate_with_422 PASSED [ 40%]
+tests/test_arena_e2e.py::test_attack_sql_injection_in_query_is_inert PASSED [ 42%]
+tests/test_arena_e2e.py::test_retrieval_error_is_surfaced_not_reported_as_isolated PASSED [ 44%]
+tests/test_arena_e2e.py::test_session_ingestion_is_idempotent_on_both_targets PASSED [ 46%]
+tests/test_arena_e2e.py::test_full_benchmark_endpoint PASSED             [ 48%]
+tests/test_arena_e2e.py::test_benchmark_rejects_unknown_caller PASSED    [ 51%]
+tests/test_arena_e2e.py::test_cli_eval_command PASSED                    [ 53%]
+tests/test_arena_e2e.py::test_cli_eval_markdown_and_json_formats PASSED  [ 55%]
+tests/test_arena_e2e.py::test_cli_table_honours_color_env PASSED         [ 57%]
+tests/test_arena_e2e.py::test_python_sources_contain_no_emoji PASSED     [ 60%]
+tests/test_arena_e2e.py::test_top_k_dial_reaches_both_targets PASSED     [ 62%]
+tests/test_arena_e2e.py::test_seed_size_dial_scales_and_restores PASSED  [ 64%]
+tests/test_arena_e2e.py::test_scenario6_same_tier_boundary_on_both_targets PASSED [ 66%]
+tests/test_arena_e2e.py::test_inject_clearance_write_up_rejected_by_rls PASSED [ 68%]
+tests/test_arena_e2e.py::test_inject_owner_spoof_rejected_by_rls PASSED  [ 71%]
+tests/test_arena_e2e.py::test_inject_private_lure_lands_and_is_isolated_on_read PASSED [ 73%]
+tests/test_arena_e2e.py::test_inject_rejects_malformed_input[body0] PASSED [ 75%]
+tests/test_arena_e2e.py::test_inject_rejects_malformed_input[body1] PASSED [ 77%]
+tests/test_arena_e2e.py::test_inject_rejects_malformed_input[body2] PASSED [ 80%]
+tests/test_arena_e2e.py::test_inject_rejects_malformed_input[body3] PASSED [ 82%]
+tests/test_arena_e2e.py::test_inject_rejects_malformed_input[body4] PASSED [ 84%]
+tests/test_arena_e2e.py::test_benchmark_job_abort_restores_baseline PASSED [ 86%]
+tests/test_arena_e2e.py::test_benchmark_job_completes_with_progress_and_history PASSED [ 88%]
+tests/test_arena_e2e.py::test_startup_baseline_populates_history PASSED  [ 91%]
+tests/test_arena_e2e.py::test_cli_eval_with_stress_dials PASSED          [ 93%]
+tests/test_arena_e2e.py::test_attack_reports_performance_and_rls_overhead PASSED [ 95%]
+tests/test_arena_e2e.py::test_benchmark_status_exposes_performance PASSED [ 97%]
+tests/test_arena_e2e.py::test_console_run_button_is_the_only_execution_trigger PASSED [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 45 passed, 1 warning in 13.24s ========================

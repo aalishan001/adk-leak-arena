@@ -1,0 +1,22 @@
+# started 2026-10-25T23:40:02Z | repo aalishan001/adk-memshield | commit 0b8575f37afeee522c950c41a035f795747f24ad | command: docker compose -p adk-memshield run --rm test sh -c 'python -c "<print versions>"; pytest -v'
+3.12.15 google-adk 2.13.0 adk-memshield 0.1.1
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 8 items
+
+tests/test_rls_isolation.py::test_adk_session_and_memory_roundtrip PASSED [ 12%]
+tests/test_rls_isolation.py::test_cross_tenant_isolation PASSED          [ 25%]
+tests/test_rls_isolation.py::test_cross_user_private_isolation PASSED    [ 37%]
+tests/test_rls_isolation.py::test_missing_app_filter_rls_protection PASSED [ 50%]
+tests/test_rls_isolation.py::test_multi_agent_clearance_rbac PASSED      [ 62%]
+tests/test_rls_isolation.py::test_fail_closed_without_session_context PASSED [ 75%]
+tests/test_rls_isolation.py::test_insert_spoofing_blocked_by_rls PASSED  [ 87%]
+tests/test_rls_isolation.py::test_adk_runner_preload_and_load_memory_integration PASSED [100%]
+
+============================== 8 passed in 5.52s ===============================

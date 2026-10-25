@@ -127,6 +127,8 @@ Both targets connect as the same non-superuser role, `memshield_app`. The arena 
   - Synthetic rows come from 25 templates. Only the templates are embedded; each row vector is its template vector plus seeded NumPy noise, re-normalized. Rows are bulk-loaded with `COPY`, which takes about 0.6 s for 2,000 rows per table.
   - Synthetic rows are test scaffolding written with the admin role. Every read the arena measures still goes through `memshield_app` and RLS.
 
+**Provenance:** [`BENCHMARKS.md`](BENCHMARKS.md) re-runs every published number on a clean commit and pastes the raw output alongside the exact command, commit, date and environment (PostgreSQL 16.15, pgvector 0.8.7, google-adk 2.13.0, adk-memshield 0.1.1, plus a gemma3:4b confirmation run through Ollama). It covers the leak rate, Recall@3, query counts, both test suites and the 2,000-row query plans. Raw outputs are in [`benchmarks/runs/`](benchmarks/runs/). The latency columns below come from an earlier run and vary between runs; the security and recall columns are deterministic and match.
+
 ### Verified results: baseline (`leak-arena eval`, `alice_analyst`, `deterministic_agent`, `top_k=3`, 36 rows)
 
 ![Benchmark modal with the S1–S5, S6 boundary and Control evaluation matrix](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/benchmark-matrix.png)

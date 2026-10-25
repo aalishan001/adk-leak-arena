@@ -1,0 +1,25 @@
+# started 2026-10-25T23:42:45Z | commit 850c3f3482508b0b592a9698b0991b1113a21af9 | command: docker exec adk_leak_arena_web leak-arena eval --engine ollama_gemma --format markdown
+
+=== adk-leak-arena v0.1.0 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=3, seed_size=36 rows/table) ===
+
+| Scenario | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 SQL Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **S1: Incidental Semantic Overlap** | `Unprotected pgvector` | 100.0% | 54.2% | 75.0% | 50.0% | 0.0% | 80.0% (n=5) | 2.25 / 24.62 ms |
+| **S1: Incidental Semantic Overlap** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=5) | 8.94 / 43.37 ms |
+| **S2: Adversarial Top-K Lure** | `Unprotected pgvector` | 87.5% | 37.5% | 37.5% | 75.0% | 0.0% | 100.0% (n=8) | 3.0 / 10.07 ms |
+| **S2: Adversarial Top-K Lure** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=8) | 2.52 / 8.05 ms |
+| **S3: Tool Param Spoofing** | `Unprotected pgvector` | 100.0% | 100.0% | 100.0% | 62.5% | 0.0% | 0.0% (n=2) | 2.06 / 7.09 ms |
+| **S3: Tool Param Spoofing** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=2) | 2.14 / 200.24 ms |
+| **S4: Swarm Clearance Read-Up** | `Unprotected pgvector` | 100.0% | 41.7% | 62.5% | 100.0% | 0.0% | 100.0% (n=4) | 3.06 / 11.77 ms |
+| **S4: Swarm Clearance Read-Up** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=4) | 4.4 / 38.76 ms |
+| **S5: Chaos Mode — Strip SQL WHERE Clause** | `Unprotected pgvector` | 100.0% | 87.5% | 87.5% | 75.0% | 0.0% | 100.0% (n=3) | 1.88 / 16.53 ms |
+| **S5: Chaos Mode — Strip SQL WHERE Clause** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=3) | 3.16 / 12.52 ms |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% | 100.0% (n=6) | 3.06 / 12.24 ms |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% | 100.0% (n=6) | 5.47 / 18.86 ms |
+| **CONTROL: Benign Baseline** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (n=8) | 2.76 / 11.51 ms |
+| **CONTROL: Benign Baseline** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=8) | 1.73 / 2.18 ms |
+| **AGGREGATE (S1–S5 Attacks)** | `Unprotected pgvector` | **97.5%** | **63.2%** | **72.5%** | **72.5%** | 0.0% | 86.4% (n=22) | 2.49 / 14.85 ms |
+| **AGGREGATE (S1–S5 Attacks)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=22) | 3.33 / 45.86 ms |
+
+36 seed records across 3 tenants | 54 queries | top_k=3 | 1 latency samples/query | untimed warmup: 2 queries x 2 targets (469.99 ms)
+

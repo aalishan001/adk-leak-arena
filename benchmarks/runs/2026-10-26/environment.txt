@@ -1,0 +1,16 @@
+# started 2026-10-25T23:42:02Z | commit 850c3f3482508b0b592a9698b0991b1113a21af9 | command: environment
+image adk-leak-arena-web: 796e28a0ad1b 2026-10-26 05:11:01 +0530 IST
+Python 3.12.15
+Name: google-adk
+Version: 2.13.0
+Name: adk-memshield
+Version: 0.1.1
+Name: fastembed
+Version: 0.9.1
+Name: psycopg
+Version: 3.3.6
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+pgvector 0.8.7
+ollama version: {"version":"0.40.8"}
+ollama gemma3:4b: [('gemma3:4b', '68ceab7e468a', '3.9B', 'Q4_K_M')]
+host: Docker 29.5.3 (linux/amd64)
