@@ -2,10 +2,12 @@
 
 **Red-Team Evaluation & Live SQL/RLS Telemetry Console for Google ADK (`google-adk`) Multi-Tenant & Multi-Agent Memory**
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/adk-leak-arena)](https://pypi.org/project/adk-leak-arena/)
+[![Python](https://img.shields.io/pypi/pyversions/adk-leak-arena)](https://pypi.org/project/adk-leak-arena/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/aalishan001/adk-leak-arena/blob/main/LICENSE)
+[![CI](https://github.com/aalishan001/adk-leak-arena/actions/workflows/ci.yml/badge.svg)](https://github.com/aalishan001/adk-leak-arena/actions/workflows/ci.yml)
 [![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4.svg)](https://google.github.io/adk-docs/)
-[![adk-memshield](https://img.shields.io/badge/PyPI-adk--memshield%20%E2%89%A50.1.0-10b981.svg)](https://pypi.org/project/adk-memshield/)
+[![adk-memshield on PyPI](https://img.shields.io/pypi/v/adk-memshield?label=adk-memshield)](https://pypi.org/project/adk-memshield/)
 
 `adk-leak-arena` is a red-team evaluation harness and live PostgreSQL kernel telemetry console in the spirit of **Promptfoo** and UK AISI **Inspect AI**.
 
@@ -13,6 +15,60 @@ It installs **[`adk-memshield>=0.1.0`](https://pypi.org/project/adk-memshield/) 
 
 1. **Left target (`UnprotectedPgVectorMemoryService`):** a shared `pgvector` table (`memories_unprotected`) that relies on application-layer SQL `WHERE` filters. It reproduces common RAG failures: *MemLeak* cross-user overlap, top-K lure poisoning, confused-deputy parameter spoofing, and *AgentLeak* clearance read-up.
 2. **Right target (`MemShieldMemoryService` from `adk-memshield`):** kernel-enforced PostgreSQL Row-Level Security (`memories` with `FORCE ROW LEVEL SECURITY` and transaction-local `set_config(..., is_local => true)`). Across S1–S5 it leaks **0%** of rows and keeps **100%** authorized recall, including when the application `WHERE` clause is stripped entirely.
+
+![S5 chaos mode: the unprotected target leaks cross-tenant canary tokens while adk-memshield returns only the caller's own rows](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/console-overview.png)
+
+*S5 (no SQL `WHERE` clause) as `alice_analyst`: the left target returns three unauthorized rows, including cross-tenant ones, and the agent repeats their canary tokens. The right target returns only Alice's own rows. Below each pane is the PostgreSQL telemetry: role, RLS flags, the transaction-local identity and the SQL as executed.*
+
+---
+
+## Quickstart
+
+### From PyPI
+
+```bash
+pip install adk-leak-arena
+```
+
+The arena needs PostgreSQL 16 with `pgvector`. The defaults expect it on `localhost:54330`:
+
+```bash
+docker run -d --name adk_leak_arena_db -p 54330:5432 -e POSTGRES_PASSWORD=postgres_admin_pass -e POSTGRES_DB=memshield pgvector/pgvector:pg16
+```
+
+```bash
+leak-arena eval
+```
+
+```bash
+leak-arena serve --port 8090
+```
+
+The first run applies the bundled schema (`adk_leak_arena/sql/init_arena.sql`) through the admin DSN, creates the non-superuser `memshield_app` role, and seeds both tables. Override the connection strings with `ARENA_DB_DSN` and `ARENA_ADMIN_DSN` (see [`.env.example`](https://github.com/aalishan001/adk-leak-arena/blob/main/.env.example)). The default credentials are for local evaluation only.
+
+### From source with Docker Compose
+
+```bash
+git clone https://github.com/aalishan001/adk-leak-arena.git
+```
+
+```bash
+cd adk-leak-arena && docker compose up --build
+```
+
+Then open [http://localhost:8090](http://localhost:8090). Compose starts `adk_leak_arena_db` (`pgvector:pg16` on `localhost:54330`) and `adk_leak_arena_web` (console and API on `localhost:8090`).
+
+### CLI
+
+| Command | Purpose |
+| :--- | :--- |
+| `leak-arena eval` | Seed the database and run S1–S5, S6 and Control for `alice_analyst` with `deterministic_agent`. |
+| `leak-arena eval --top-k 10 --seed-size 2000 --repeats 1` | Stress run: 10 neighbours, 1,964 synthetic background rows per table. |
+| `leak-arena eval --caller exec_agent --scenarios S4,CONTROL` | Clearance-3 caller on a subset of scenarios. |
+| `leak-arena eval --format markdown` / `--format json` | GitHub table or a single parseable JSON report. |
+| `leak-arena serve --host 127.0.0.1 --port 8090` | Web console and API. |
+
+`--top-k` accepts 1, 3, 5, 10 or 20; `--seed-size` accepts 36, 250, 500, 1000 or 2000; `--engine` accepts `deterministic_agent` (default, offline), `ollama_gemma` or `gemini_api`.
 
 ---
 
@@ -73,6 +129,8 @@ Both targets connect as the same non-superuser role, `memshield_app`. The arena 
 
 ### Verified results: baseline (`leak-arena eval`, `alice_analyst`, `deterministic_agent`, `top_k=3`, 36 rows)
 
+![Benchmark modal with the S1–S5, S6 boundary and Control evaluation matrix](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/benchmark-matrix.png)
+
 | Scenario | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 SQL Latency |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **S1: Incidental Semantic Overlap** | `Unprotected pgvector` | 100.0% | 54.2% | 75.0% | 75.0% | 0.0% | 80.0% (n=5) | 1.64 / 3.55 ms |
@@ -119,22 +177,47 @@ Benchmark reports (and `/api/benchmark/status` once finished) add a run-level `p
 
 Throughput was 39.0 side-by-side queries/sec. At 36 rows the RLS delta changes sign between runs (it ranged from -0.53 to +0.16 ms at p50 in three runs), so treat it as within measurement noise.
 
-The query plans explain why RLS costs so little:
-- The policy predicates filter rows before the vector-distance sort.
-- At 2,000 rows, `EXPLAIN ANALYZE` shows the RLS search using a bitmap index scan on the B-tree `idx_memories_scope_lookup` (`app_name`, `tenant_id`). It computes distances for only 45 policy-visible rows.
-- The unfiltered unprotected search (S5) scans all 2,000 rows.
-- At 36 rows both sides use a sequential scan.
+### Query plans at 2,000 rows (`EXPLAIN ANALYZE`)
 
-### Threat-model limits
-- RLS does not stop poison that an actor is allowed to write into a shared scope (S6).
-- S2's hijack rate is not tuned: lures reach Rank #1 on 3 of 8 queries.
-- S3's recall on the left target is 0% because the spoofed filter returns only the victim's rows.
+S5 search (`ORDER BY embedding <=> $1 LIMIT 3`, no application `WHERE`) as `alice_analyst` (Clearance 1) at `--seed-size 2000`, PostgreSQL 16, no vector index:
+
+| Target | Planner statistics | Plan | Rows scored by `<=>` | Execution |
+| :--- | :--- | :--- | :---: | :---: |
+| `memories_unprotected` | any | `Seq Scan` → top-N heapsort | 2,000 | 2.3–3.1 ms |
+| `memories` (RLS) | right after the bulk `COPY` | `Seq Scan`, RLS `Filter` (1,955 rows removed) → top-N heapsort | 45 | 2.4 ms |
+| `memories` (RLS) | after `ANALYZE` | `Bitmap Index Scan` on B-tree `idx_memories_scope_lookup` (`app_name`, `tenant_id`; 978 candidates) → `Bitmap Heap Scan` with the user/clearance `Filter` (933 removed) → top-N heapsort | 45 | 1.3 ms |
+
+The RLS-protected plan after `ANALYZE` (vector literal elided):
+
+```text
+Limit (actual time=1.232..1.233 rows=3 loops=1)
+  ->  Sort (actual time=1.231..1.232 rows=3 loops=1)
+        Sort Method: top-N heapsort  Memory: 25kB
+        ->  Bitmap Heap Scan on memories (actual time=0.442..1.216 rows=45 loops=1)
+              Recheck Cond: ((app_name = current_setting('app.current_app_name', true))
+                             AND (tenant_id = current_setting('app.current_tenant_id', true)))
+              Filter: ((user_id = current_setting('app.current_user_id', true))
+                       OR ((scope = 'tenant_shared') AND (min_clearance <= COALESCE(NULLIF(current_setting('app.agent_clearance', true), '')::integer, 1))))
+              Rows Removed by Filter: 933
+              ->  Bitmap Index Scan on idx_memories_scope_lookup (actual time=0.387..0.387 rows=978 loops=1)
+                    Index Cond: ((app_name = current_setting('app.current_app_name', true))
+                                 AND (tenant_id = current_setting('app.current_tenant_id', true)))
+Execution Time: 1.262 ms
+```
+
+What this shows:
+- The RLS policy predicates are applied **before** the distance sort, so the protected search scores only the 45 rows the caller may read. The unprotected S5 search scores every row in the table.
+- Because `current_setting(...)` is stable within a statement, PostgreSQL can use the policy's `app_name`/`tenant_id` equality as a B-tree index condition. It does so once table statistics exist (after `ANALYZE` or autovacuum). Immediately after `/api/scale` bulk-loads rows, the planner still picks a sequential scan, but the policy filter still runs before scoring.
+- At 36 rows both targets use a sequential scan.
+- These plans have no ANN index. With HNSW or IVFFlat, RLS filters rows after the index scan and can return fewer than `top_k` rows; use pgvector 0.8 iterative scans and re-measure recall.
 
 ---
 
 ## RLS Write-Policy Sandbox (`POST /api/inject`)
 
 The sandbox attempts the same write against both tables. The acting persona is the authenticated writer; `claimed_owner_id` is the owner column the write tries to set.
+
+![Write-policy sandbox: a Clearance-1 contractor's Clearance-3 shared write is accepted by the unprotected table and rejected by RLS with SQLSTATE 42501](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/write-policy-sandbox.png)
 
 | Attempt | Unprotected | adk-memshield |
 | :--- | :--- | :--- |
@@ -157,6 +240,8 @@ On the adk-memshield side, the transaction identity is bound to the actor with t
 | `POST /api/benchmark` | Synchronous wrapper: runs a job and returns its report. |
 | `GET /api/history`, `GET /api/history/{run_id}?format=json\|md`, `DELETE /api/history` | Completed and cancelled runs (last 50, in server memory), with per-scenario rows, aggregates and Markdown/JSON export. |
 
+![Run History tab listing completed benchmark runs with their dials and S1–S5 aggregates](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/benchmark-history.png)
+
 When a completed run used `seed_size > 36`, its synthetic rows are removed afterwards. The server records one deterministic `startup-baseline` run at boot (`ARENA_STARTUP_BASELINE=0` disables it), so history is never empty.
 
 While a job runs, `/api/reset`, `/api/scale` and `/api/inject` return `409`. `/api/attack` still works and reports `benchmark_running: true`.
@@ -178,13 +263,9 @@ Input hardening:
 
 ---
 
-## Quickstart (Docker Compose)
+## Running Tests & Evaluations in Docker
 
-Starts an isolated `pgvector:pg16` instance (`adk_leak_arena_db` on `localhost:54330`) and the web/API container (`adk_leak_arena_web` on `localhost:8090`):
-
-```bash
-docker compose -p adk-leak-arena up -d --build
-```
+With the Compose stack running (`docker compose up -d --build`):
 
 ```bash
 docker exec adk_leak_arena_web pytest -v
@@ -227,15 +308,30 @@ Select the engine in the console header or with `--engine`. If the requested eng
 
 ---
 
-## Local Python Usage
+## Known Limitations
+
+- **Same-tier shared poisoning (S6) is out of scope for RLS.** A writer may publish `tenant_shared` content at or below their own clearance, and every reader at that tier is entitled to it. Use write approval or content moderation.
+- **S2's hijack rate is not tuned:** lures reach Rank #1 on 3 of 8 queries.
+- **S3 recall on the unprotected target is 0%** because the spoofed filter returns only the victim's rows.
+- **The CLI and server share one database.** `leak-arena eval` reseeds it; do not run it while a server benchmark job (including the ~5 s startup baseline) is active, or S6 fixture rows leak into the CLI's S1–S5 results.
+- **Latency is noisy on Docker Desktop.** Use p50 for overhead claims; at 36 rows the RLS delta changes sign between runs.
+- **Run history is in memory** (last 50 runs) and is cleared on restart.
+- **The full benchmark is verified only with `deterministic_agent`.** LLM engines change the canary-exfiltration column, not the retrieval verdicts.
+- **The dataset is synthetic and hand-written** (36 rows, 54 queries). Treat the numbers as a reproducible illustration of failure modes, not real-world leak rates.
+
+---
+
+## Development
 
 ```bash
 pip install -e ".[dev]"
 ```
 
 ```bash
-leak-arena serve --host 0.0.0.0 --port 8090
+pytest -v
 ```
+
+The suite (45 tests) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
 
 ---
 
