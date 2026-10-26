@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Development status is now `3 - Alpha`.
+- Added the `Environment :: Web Environment` and `Topic :: Software Development :: Testing` classifiers and the `ai-agents`, `llm-evaluation`, `benchmark` and `adk` keywords.
+
 ## [0.1.0] - 2026-10-25
 
 ### Added
