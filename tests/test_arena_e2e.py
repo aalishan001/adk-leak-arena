@@ -15,6 +15,7 @@ from google.adk.events.event import Event
 from google.adk.sessions.session import Session
 from google.genai import types
 
+from adk_leak_arena import __version__
 from adk_leak_arena.cli import main as cli_main
 from adk_leak_arena.config import ArenaConfig
 from adk_leak_arena.dataset import (
@@ -90,7 +91,7 @@ def test_ui_and_state_endpoints(client: TestClient) -> None:
     resp_state = client.get("/api/state")
     assert resp_state.status_code == 200
     state = resp_state.json()
-    assert state["arena_version"] == "0.1.0"
+    assert state["arena_version"] == __version__
     assert len(state["presets"]) == 6  # S1-S5 attacks + S6 boundary
     assert state["attack_ids"] == ["S1", "S2", "S3", "S4", "S5"]
     assert state["top_k_options"] == [1, 3, 5, 10, 20]
@@ -384,7 +385,7 @@ def test_cli_eval_command(capsys: pytest.CaptureFixture[str]) -> None:
     )
     assert exit_code == 0
     captured = capsys.readouterr().out
-    assert "adk-leak-arena v0.1.0" in captured
+    assert f"adk-leak-arena v{__version__}" in captured
     assert "adk-memshield (RLS)" in captured
     assert "0.0%" in captured
     # Default --format table: fixed-width box drawing, no raw Markdown pipes, no ANSI off-TTY.

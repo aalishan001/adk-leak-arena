@@ -12,6 +12,7 @@ from typing import Any, Sequence, TextIO
 
 import uvicorn
 
+from . import __version__
 from .config import ArenaConfig
 from .evaluator import SCENARIO_IDS, run_full_benchmark
 from .runner_pair import ensure_schema_and_seed
@@ -302,7 +303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             scale_info["synthetic_rows_per_table"] if scale_info else 0
         )
         print(
-            f"\n=== adk-leak-arena v0.1.0 | Red-Team Evaluation Matrix "
+            f"\n=== adk-leak-arena v{__version__} | Red-Team Evaluation Matrix "
             f"(caller={args.caller}, top_k={args.top_k}, seed_size={rows} rows/table) ===\n"
         )
         if scale_info:
