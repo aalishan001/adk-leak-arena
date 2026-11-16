@@ -1,9 +1,11 @@
-"""Side-by-side Google ADK Runner pipelines comparing Unprotected pgvector vs adk-memshield."""
+"""Google ADK Runner pipelines run side by side against N memory targets.
+
+The default target set is the 0.1.0 pair (unprotected pgvector and adk-memshield); see
+:mod:`adk_leak_arena.targets` for the others."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import re
 import threading
@@ -41,7 +43,13 @@ from .dataset import (
     extract_entry_text,
     find_eval_query,
 )
-from .scale import current_seed_size, mark_baseline_reseeded, s6_fixture
+from .scale import current_seed_size, mark_baseline_reseeded, scenario_fixture
+from .targets import (
+    DEFAULT_TARGETS,
+    Mistake,
+    TargetSet,
+    parse_targets,
+)
 from .unprotected_service import (
     FailureMode,
     UnprotectedPgVectorMemoryService,
@@ -57,7 +65,7 @@ _PAST_CONV_RE = re.compile(
     re.DOTALL,
 )
 
-_DB_POSTURE: dict[str, Any] | None = None
+_DB_POSTURE: dict[str, dict[str, Any]] = {}  # per DSN (run-scoped schemas differ)
 _DB_POSTURE_LOCK = threading.Lock()
 
 
@@ -176,10 +184,10 @@ def probe_db_security_posture(config: ArenaConfig, *, refresh: bool = False) -> 
     Telemetry cards report these values instead of hard-coded strings, so a misconfigured
     deployment (e.g. a BYPASSRLS role) is visible rather than silently mislabelled.
     """
-    global _DB_POSTURE
     with _DB_POSTURE_LOCK:
-        if _DB_POSTURE is not None and not refresh:
-            return _DB_POSTURE
+        cached = _DB_POSTURE.get(config.db_dsn)
+        if cached is not None and not refresh:
+            return cached
     posture: dict[str, Any] = {"ok": False}
     try:
         with psycopg.connect(config.db_dsn, connect_timeout=3) as conn:
@@ -191,8 +199,7 @@ def probe_db_security_posture(config: ArenaConfig, *, refresh: bool = False) -> 
                     FROM pg_roles r
                     CROSS JOIN pg_class c
                     WHERE r.rolname = current_user
-                      AND c.relname IN ('memories', 'memories_unprotected')
-                      AND c.relnamespace = 'public'::regnamespace
+                      AND c.oid IN (to_regclass('memories'), to_regclass('memories_unprotected'))
                     """
                 )
                 rows = cur.fetchall()
@@ -222,7 +229,7 @@ def probe_db_security_posture(config: ArenaConfig, *, refresh: bool = False) -> 
         posture = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     with _DB_POSTURE_LOCK:
         if posture.get("ok"):
-            _DB_POSTURE = posture
+            _DB_POSTURE[config.db_dsn] = posture
     return posture
 
 
@@ -329,6 +336,8 @@ class SinglePaneResult:
     """Execution result for one side (Unprotected or MemShield) of the arena comparison."""
 
     target: str
+    label: str
+    protected: bool
     engine_requested: str
     engine_used: str
     engine_fallback_reason: str | None
@@ -341,6 +350,9 @@ class SinglePaneResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "target": self.target,
+            "label": self.label,
+            "protected": self.protected,
+            "applicable": True,
             "engine_requested": self.engine_requested,
             "engine_used": self.engine_used,
             "engine_fallback": self.engine_fallback_reason is not None,
@@ -496,7 +508,7 @@ def _build_telemetry(
     )
     telemetry_dict["db_posture_verified"] = posture_ok
 
-    if target_key == "memshield":
+    if target_key.startswith("memshield"):
         ctx = telemetry_dict.get("session_context", {}) or {}
         mem_flags = tables.get("memories", {})
         if posture_ok:
@@ -514,13 +526,24 @@ def _build_telemetry(
         tenant = ctx.get("app.current_tenant_id", caller_tenant_id)
         user = ctx.get("app.current_user_id", caller_user_id)
         clearance = ctx.get("app.agent_clearance", caller_clearance)
+        compartments = ctx.get("app.agent_compartments", "")
+        plan_mode = ctx.get("plan_cache_mode", "force_custom_plan")
         telemetry_dict["set_local_sql"] = (
-            "-- Transaction-local identity: set_config(name, value, is_local => true) ≡ SET LOCAL,\n"
+            "-- Transaction-local identity: set_config(name, value, is_local => true) = SET LOCAL,\n"
             "-- discarded at COMMIT/ROLLBACK so it never bleeds into the next pooled checkout.\n"
             f"SELECT set_config('app.current_app_name', {_sql_literal(app_name)}, true),\n"
             f"       set_config('app.current_tenant_id', {_sql_literal(tenant)}, true),\n"
             f"       set_config('app.current_user_id', {_sql_literal(user)}, true),\n"
-            f"       set_config('app.agent_clearance', {_sql_literal(clearance)}, true);"
+            f"       set_config('app.agent_clearance', {_sql_literal(clearance)}, true),\n"
+            f"       set_config('app.agent_compartments', {_sql_literal(compartments)}, true),\n"
+            f"       set_config('plan_cache_mode', {_sql_literal(plan_mode)}, true);"
+        )
+    elif target_key != "unprotected":
+        telemetry_dict["rls_enforcement"] = "NONE: application-supplied filter (store API)"
+        telemetry_dict["rls_effective"] = False
+        telemetry_dict["set_local_sql"] = (
+            f"-- No database-enforced identity. Isolation depends on the filter the application "
+            f"passes to the store (failure_mode: {getattr(memory_service, 'failure_mode', 'unknown')})."
         )
     else:
         unp_flags = tables.get("memories_unprotected", {})
@@ -553,6 +576,8 @@ async def _run_single_adk_pipeline(
     ollama_status: dict[str, Any] | None,
     db_posture: dict[str, Any],
     top_k: int = 3,
+    protected: bool = False,
+    caller_compartments: Sequence[str] = (),
 ) -> SinglePaneResult:
     """Execute a full Google ADK `Runner` + `preload_memory_tool` turn and classify leaks."""
     captured_memories: list[MemoryEntry] = []
@@ -664,10 +689,15 @@ async def _run_single_adk_pipeline(
         top_k=top_k,
         relevant_keys=relevant_keys,
         retrieval_error=retrieval_error,
+        caller_compartments=caller_compartments,
     )
+    if getattr(memory_service, "identity_refused", False):
+        telemetry_dict["identity_refused"] = True
 
     return SinglePaneResult(
         target=target_key,
+        label=target_label,
+        protected=protected,
         engine_requested=engine,
         engine_used=engine_used,
         engine_fallback_reason=fallback_reason,
@@ -677,6 +707,49 @@ async def _run_single_adk_pipeline(
         telemetry=telemetry_dict,
         total_runner_ms=total_runner_ms,
     )
+
+
+_TARGET_SETS: dict[tuple[str, tuple[str, ...]], TargetSet] = {}
+_TARGET_SETS_LOCK = threading.Lock()
+
+
+def get_target_set(config: ArenaConfig, names: Sequence[str] | None) -> TargetSet:
+    """Cached :class:`TargetSet` for the given names on this config's database/schema."""
+    parsed = parse_targets(names)
+    key = (config.db_dsn, parsed)
+    with _TARGET_SETS_LOCK:
+        tset = _TARGET_SETS.get(key)
+        if tset is None:
+            tset = TargetSet(config, parsed, namespace=config.schema)
+            # Non-SQL targets get the baseline dataset once per process (SQL targets are
+            # seeded by ensure_schema_and_seed).
+            for target in tset.external():
+                target.reset()
+                target.seed(SEED_RECORDS)
+            _TARGET_SETS[key] = tset
+        return tset
+
+
+def _not_applicable(name: str, label: str, protected: bool, failure_mode: str) -> dict[str, Any]:
+    return {
+        "target": name,
+        "label": label,
+        "protected": protected,
+        "applicable": False,
+        "reason": f"{label} cannot express the '{failure_mode}' mistake through its API",
+    }
+
+
+def _configuration_refused(name: str, label: str, protected: bool, reason: str) -> dict[str, Any]:
+    """A target that refused to run at all: a configuration verdict, not a leak row."""
+    return {
+        "target": name,
+        "label": label,
+        "protected": protected,
+        "applicable": False,
+        "configuration_refused": True,
+        "reason": reason,
+    }
 
 
 async def run_side_by_side_comparison(
@@ -691,12 +764,19 @@ async def run_side_by_side_comparison(
     engine: EngineMode = "deterministic_agent",
     relevant_keys: Sequence[str] | None = None,
     top_k: int | None = None,
+    targets: TargetSet | Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Run Left (Unprotected) and Right (adk-memshield RLS) ADK Runners side-by-side.
+    """Run one ADK Runner per target, concurrently, on the same query and caller.
+
+    `targets` defaults to the 0.1.0 pair (`unprotected`, `memshield`); the result keeps the
+    top-level `unprotected` / `memshield` keys for those two and adds `targets` with every
+    target's pane in `target_order`. A target that cannot express the scenario's mistake
+    gets an `applicable: false` pane (reported as n/a, never as 0%).
 
     `relevant_keys` enables Recall@K scoring; when omitted, it is looked up from the
     benchmark query bank by exact text (custom queries are reported as recall n/a).
     """
+    tset = targets if isinstance(targets, TargetSet) else get_target_set(config, targets or DEFAULT_TARGETS)
     persona = CALLER_PERSONAS.get(caller_id, CALLER_PERSONAS["alice_analyst"])
     preset = PRESET_BY_ID.get(preset_id or "S1")
     effective_top_k = max(1, min(int(top_k or config.top_k), 20))
@@ -732,28 +812,10 @@ async def run_side_by_side_comparison(
         else None
     )
     embed_fn = get_cached_embed_fn(config.embedding_model, config.embedding_dim)
-
-    unprotected_service = UnprotectedPgVectorMemoryService(
-        dsn=config.db_dsn,
-        tenant_id=persona.tenant_id,
-        agent_clearance=persona.clearance,
-        top_k=effective_top_k,
+    mistake = Mistake(
         failure_mode=resolved_failure_mode,
         simulate_missing_app_filter=resolved_chaos,
         spoofed_user_id=resolved_spoof_user,
-        embed_fn=embed_fn,
-    )
-
-    memshield_service = MemShieldMemoryService(
-        config=MemShieldConfig(
-            dsn=config.db_dsn,
-            tenant_id=persona.tenant_id,
-            agent_clearance=persona.clearance,
-            top_k=effective_top_k,
-            table_name="memories",
-            simulate_missing_app_filter=resolved_chaos,
-        ),
-        embed_fn=embed_fn,
     )
 
     common = dict(
@@ -767,38 +829,52 @@ async def run_side_by_side_comparison(
         ollama_status=ollama_status,
         db_posture=db_posture,
         top_k=effective_top_k,
+        caller_compartments=tuple(persona.compartments),
     )
-    # S6 plants Mallory's same-tier shared lures only for the duration of the run.
-    fixture = s6_fixture(config) if preset and preset.id == "S6" else contextlib.nullcontext()
-    async with fixture:
-        t_turn = time.perf_counter()
-        left_res, right_res = await asyncio.gather(
-            _run_single_adk_pipeline(
-                target_key="unprotected",
-                target_label="Unprotected pgvector",
-                memory_service=unprotected_service,
-                **common,
-            ),
-            _run_single_adk_pipeline(
-                target_key="memshield",
-                target_label="adk-memshield (RLS Kernel)",
-                memory_service=memshield_service,
-                **common,
-            ),
+    limit = asyncio.Semaphore(config.target_concurrency)
+
+    async def one(name: str) -> dict[str, Any]:
+        target = tset.targets[name]
+        refusal = await asyncio.to_thread(target.preflight)
+        if refusal:
+            return _configuration_refused(name, target.label, target.protected, refusal)
+        if not target.capabilities.supports(resolved_failure_mode):
+            return _not_applicable(name, target.label, target.protected, resolved_failure_mode)
+        service = target.build_service(
+            persona=persona, mistake=mistake, top_k=effective_top_k, embed_fn=embed_fn
         )
+        async with limit:
+            result = await _run_single_adk_pipeline(
+                target_key=name,
+                target_label=target.label,
+                memory_service=service,
+                protected=target.protected,
+                **common,
+            )
+        return result.to_dict()
+
+    # S6 (Mallory's same-tier lures) and S7 (compartment rows) plant fixture rows only for
+    # the duration of the run.
+    async with scenario_fixture(config, tset, preset.id if preset else None):
+        t_turn = time.perf_counter()
+        panes = await asyncio.gather(*(one(name) for name in tset.names))
         total_turn_ms = (time.perf_counter() - t_turn) * 1000.0
+    by_name = dict(zip(tset.names, panes, strict=True))
 
-    performance = build_attack_performance(
-        unprotected_sql_ms=float(left_res.telemetry.get("latency_ms", 0.0)),
-        memshield_sql_ms=float(right_res.telemetry.get("latency_ms", 0.0)),
-        unprotected_turn_ms=left_res.total_runner_ms,
-        memshield_turn_ms=right_res.total_runner_ms,
-        total_turn_ms=total_turn_ms,
-        unprotected_sql=str(left_res.telemetry.get("sql", "")),
-        table_rows=current_seed_size(),
-    )
+    performance = None
+    left, right = by_name.get("unprotected"), by_name.get("memshield")
+    if left and right and left.get("applicable") and right.get("applicable"):
+        performance = build_attack_performance(
+            unprotected_sql_ms=float(left["telemetry"].get("latency_ms", 0.0)),
+            memshield_sql_ms=float(right["telemetry"].get("latency_ms", 0.0)),
+            unprotected_turn_ms=float(left["total_runner_ms"]),
+            memshield_turn_ms=float(right["total_runner_ms"]),
+            total_turn_ms=total_turn_ms,
+            unprotected_sql=str(left["telemetry"].get("sql", "")),
+            table_rows=current_seed_size(),
+        )
 
-    return {
+    result: dict[str, Any] = {
         "query": query,
         "caller": {
             "user_id": persona.user_id,
@@ -806,6 +882,7 @@ async def run_side_by_side_comparison(
             "clearance": persona.clearance,
             "display_name": persona.display_name,
             "role_badge": persona.role_badge,
+            "compartments": list(persona.compartments),
         },
         "scenario": {
             "preset_id": preset.id if preset else "CUSTOM",
@@ -816,7 +893,9 @@ async def run_side_by_side_comparison(
             "failure_mode": resolved_failure_mode,
             "simulate_missing_app_filter": resolved_chaos,
             "spoofed_user_id": (
-                resolved_spoof_user if resolved_failure_mode == "param_spoof_user_id" else None
+                resolved_spoof_user
+                if resolved_failure_mode in ("param_spoof_user_id", "forged_identity")
+                else None
             ),
             "relevant_keys": list(relevant_keys) if relevant_keys is not None else None,
             "description": preset.description if preset else "",
@@ -824,6 +903,10 @@ async def run_side_by_side_comparison(
         "top_k": effective_top_k,
         "db_posture": db_posture,
         "performance": performance,
-        "unprotected": left_res.to_dict(),
-        "memshield": right_res.to_dict(),
+        "target_order": list(tset.names),
+        "targets": by_name,
     }
+    for legacy in ("unprotected", "memshield"):
+        if legacy in by_name:
+            result[legacy] = by_name[legacy]
+    return result

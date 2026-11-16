@@ -14,8 +14,9 @@ import uvicorn
 
 from . import __version__
 from .config import ArenaConfig
-from .evaluator import SCENARIO_IDS, run_full_benchmark
-from .runner_pair import ensure_schema_and_seed
+from .evaluator import ATTACK_IDS, DEFAULT_SCENARIO_IDS, SCENARIO_IDS, run_full_benchmark
+from .namespaces import run_namespace
+from .targets import DEFAULT_TARGETS, TARGET_CLASSES, parse_targets
 from .scale import SEED_SIZE_OPTIONS, TOP_K_OPTIONS, apply_seed_size, delete_synthetic
 
 _ANSI = {
@@ -34,8 +35,11 @@ _SHORT_NAMES = {
     "S4": "S4 Clearance Read-Up",
     "S5": "S5 No-WHERE Chaos",
     "S6": "S6 Same-Tier Boundary",
+    "S7": "S7 Compartment X-Read",
+    "S8": "S8 Forged Identity",
+    "S9": "S9 Pooled Session Bleed",
     "CONTROL": "Control Baseline",
-    "AGGREGATE": "S1-S5 Aggregate",
+    "AGGREGATE": "Attack Aggregate",
 }
 _TARGET_NAMES = {"unprotected": "Unprotected pgvector", "memshield": "adk-memshield (RLS)"}
 
@@ -67,13 +71,21 @@ def _signed(v: float) -> str:
     return f"{v:+.2f}"
 
 
+def _target_info(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return report.get("targets") or [
+        {"name": "unprotected", "label": _TARGET_NAMES["unprotected"], "protected": False},
+        {"name": "memshield", "label": _TARGET_NAMES["memshield"], "protected": True},
+    ]
+
+
 def render_box_table(report: dict[str, Any], *, color: bool) -> str:
     """Render the evaluation matrix as a fixed-width Unicode box-drawing table."""
     paint = _Painter(color)
     top_k = report.get("top_k", 3)
+    info = _target_info(report)
     columns = [
         ("Scenario", 21, "<"),
-        ("Target", 20, "<"),
+        ("Target", 22, "<"),
         ("Leak>=1", 7, ">"),
         ("LeakShare", 9, ">"),
         ("Rank1Hijack", 11, ">"),
@@ -103,15 +115,23 @@ def render_box_table(report: dict[str, Any], *, color: bool) -> str:
             return "n/a", ("dim",)
         return f"{v:.1f}% n={m['recall_eligible_queries']}", ("green",) if v >= 100 else ("amber",)
 
-    def row(label: str, target: str, m: dict[str, Any], *, boundary: bool, delta: float | None) -> str:
+    def row(label: str, t: dict[str, Any], m: dict[str, Any] | None, *, boundary: bool,
+            delta: float | None) -> str:
         label_styles: tuple[str, ...] = ("amber", "bold") if boundary else ("bold",)
+        name_cell = (t["label"], ("green",) if t.get("protected") else ("red",))
+        if m is not None and m.get("configuration_refused"):
+            ref = ("refused", ("amber", "bold"))
+            return line([(label, label_styles), name_cell, ref, ref, ref, ref, ("config", ("amber",)), ("", ()), ("", ())])
+        if m is None or not m.get("applicable", True):
+            na = ("n/a", ("dim",))
+            return line([(label, label_styles), name_cell, na, na, na, na, na, na, ("", ())])
         delta_cell: tuple[str, tuple[str, ...]] = ("", ())
         if delta is not None:
             delta_cell = (_signed(delta), ("green",) if delta <= 0 else ())
         return line(
             [
                 (label, label_styles),
-                (_TARGET_NAMES[target], ("red",) if target == "unprotected" else ("green",)),
+                name_cell,
                 leak_cell(m["queries_leaking_pct"]),
                 leak_cell(m["leaked_row_share_pct"]),
                 leak_cell(m["rank_1_hijack_pct"]),
@@ -127,20 +147,23 @@ def render_box_table(report: dict[str, Any], *, color: bool) -> str:
     for s in report["scenarios"]:
         label = _SHORT_NAMES.get(s["id"], s["id"])
         boundary = bool(s.get("boundary"))
-        delta = s.get("rls_delta_p50_ms")
+        per = s.get("targets") or {k: s.get(k) for k in ("unprotected", "memshield")}
         groups.append(
             [
-                row(label, "unprotected", s["unprotected"], boundary=boundary, delta=None),
-                row(label, "memshield", s["memshield"], boundary=boundary, delta=delta),
+                row(label, t, per.get(t["name"]), boundary=boundary,
+                    delta=s.get("rls_delta_p50_ms") if t["name"] == "memshield" else None)
+                for t in info
             ]
         )
     agg = report.get("aggregate_attacks")
     if agg:
-        delta = round(agg["memshield"]["p50_latency_ms"] - agg["unprotected"]["p50_latency_ms"], 2)
+        unp, ms = agg.get("unprotected"), agg.get("memshield")
+        delta = round(ms["p50_latency_ms"] - unp["p50_latency_ms"], 2) if unp and ms else None
         groups.append(
             [
-                row(_SHORT_NAMES["AGGREGATE"], "unprotected", agg["unprotected"], boundary=False, delta=None),
-                row(_SHORT_NAMES["AGGREGATE"], "memshield", agg["memshield"], boundary=False, delta=delta),
+                row(_SHORT_NAMES["AGGREGATE"], t, agg.get(t["name"]), boundary=False,
+                    delta=delta if t["name"] == "memshield" else None)
+                for t in info
             ]
         )
     for i, group in enumerate(groups):
@@ -163,6 +186,13 @@ def render_performance_box(report: dict[str, Any], *, color: bool, width: int = 
         for chunk in textwrap.wrap(text, inner) or [""]:
             lines.append("│ " + paint(f"{chunk:<{inner}}", *styles) + " │")
 
+    for name, stats in (perf.get("targets") or {}).items():
+        if name in ("unprotected", "memshield"):
+            continue
+        add(f"{name + ' search':<30} p50 {stats['p50_ms']:7.2f} ms   p95 {stats['p95_ms']:7.2f} ms")
+    if "p50_delta_ms" not in perf:
+        lines.append("└" + "─" * (width - 2) + "┘")
+        return "\n".join(lines)
     d50, d95 = perf.get("p50_delta_ms", 0.0), perf.get("p95_delta_ms", 0.0)
     pct = perf.get("p50_delta_pct")
     add(
@@ -199,6 +229,34 @@ def render_performance_box(report: dict[str, Any], *, color: bool, width: int = 
     )
     lines.append("└" + "─" * (width - 2) + "┘")
     return "\n".join(lines)
+
+
+EXIT_OK, EXIT_FAIL, EXIT_ERROR = 0, 1, 2
+
+
+def gate(report: dict[str, Any], *, fail_on: str, min_recall: float | None) -> tuple[int, list[str]]:
+    """Decide the exit code: 1 when a protected target leaks in an attack scenario (boundary
+    rows such as S6 are excluded) or its recall is below ``min_recall``; 2 on run errors."""
+    reasons: list[str] = []
+    info = {t["name"]: t for t in _target_info(report)}
+    errors = 0
+    for s in report["scenarios"]:
+        per = s.get("targets") or {}
+        for name, m in per.items():
+            if not m.get("applicable", True):
+                continue
+            errors += int(m.get("retrieval_errors", 0))
+            if not info.get(name, {}).get("protected"):
+                continue
+            if fail_on == "leak" and s["id"] in ATTACK_IDS and not s.get("boundary"):
+                if m["queries_leaking_pct"] > 0:
+                    reasons.append(f"{name} leaked in {s['id']} ({m['queries_leaking_pct']}% of queries)")
+            recall = m.get("authorized_recall_pct")
+            if min_recall is not None and recall is not None and recall < min_recall * 100.0:
+                reasons.append(f"{name} recall {recall}% < {min_recall * 100:.0f}% in {s['id']}")
+    if errors:
+        return EXIT_ERROR, [f"{errors} retrieval error(s) during the run"] + reasons
+    return (EXIT_FAIL if reasons else EXIT_OK), reasons
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -249,8 +307,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     eval_p.add_argument(
         "--scenarios",
-        default=",".join(SCENARIO_IDS),
-        help=f"Comma-separated subset of {','.join(SCENARIO_IDS)}",
+        default=",".join(DEFAULT_SCENARIO_IDS),
+        help=(
+            f"Comma-separated subset of {','.join(SCENARIO_IDS)}, or 'all'. The default is the 0.1.0 set "
+            f"({','.join(DEFAULT_SCENARIO_IDS)}); S7-S9 cover adk-memshield 0.2.0's compartments, "
+            "verified identity and pool hygiene"
+        ),
     )
     eval_p.add_argument(
         "--format",
@@ -263,6 +325,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Deprecated alias for --format json",
     )
+    eval_p.add_argument(
+        "--targets",
+        default=",".join(DEFAULT_TARGETS),
+        help="Comma-separated targets to compare (at least two): " + ",".join(TARGET_CLASSES),
+    )
+    eval_p.add_argument(
+        "--fail-on",
+        default="leak",
+        choices=["leak", "none"],
+        help="Exit 1 when a protected target leaks in an attack scenario (default), or never",
+    )
+    eval_p.add_argument(
+        "--min-recall",
+        type=float,
+        default=None,
+        help="Also exit 1 when a protected target's authorized recall falls below this (0..1)",
+    )
+    eval_p.add_argument(
+        "--shared-db",
+        action="store_true",
+        help="Use the shared default tables instead of a per-run schema (0.1.0 behaviour)",
+    )
 
     args = parser.parse_args(list(argv) if argv is not None else None)
     cfg = ArenaConfig()
@@ -273,38 +357,61 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "eval":
         fmt = "json" if args.json else args.format
-        scenarios = [s.strip().upper() for s in args.scenarios.split(",") if s.strip()]
+        scenarios = (
+            list(SCENARIO_IDS)
+            if args.scenarios.strip().lower() == "all"
+            else [s.strip().upper() for s in args.scenarios.split(",") if s.strip()]
+        )
         unknown = [s for s in scenarios if s not in SCENARIO_IDS]
         if unknown or not scenarios:
             parser.error(f"--scenarios must be a subset of {','.join(SCENARIO_IDS)}")
-        seed_info = ensure_schema_and_seed(cfg)
-        scale_info = apply_seed_size(cfg, args.seed_size) if args.seed_size > SEED_SIZE_OPTIONS[0] else None
         try:
-            report = asyncio.run(
-                run_full_benchmark(
-                    cfg,
-                    caller_id=args.caller,
-                    engine=args.engine,  # type: ignore[arg-type]
-                    repeats=args.repeats,
-                    top_k=args.top_k,
-                    scenarios=scenarios,
+            target_names = parse_targets(args.targets)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if args.min_recall is not None and not 0.0 <= args.min_recall <= 1.0:
+            parser.error("--min-recall must be between 0 and 1")
+        try:
+            with run_namespace(cfg, target_names, isolated=not args.shared_db) as (run_cfg, tset):
+                scale_info = (
+                    apply_seed_size(run_cfg, args.seed_size)
+                    if args.seed_size > SEED_SIZE_OPTIONS[0]
+                    else None
                 )
-            )
-        finally:
-            if scale_info:
-                delete_synthetic(cfg)
+                try:
+                    report = asyncio.run(
+                        run_full_benchmark(
+                            run_cfg,
+                            caller_id=args.caller,
+                            engine=args.engine,  # type: ignore[arg-type]
+                            repeats=args.repeats,
+                            top_k=args.top_k,
+                            scenarios=scenarios,
+                            targets=tset,
+                        )
+                    )
+                finally:
+                    if scale_info:
+                        delete_synthetic(run_cfg)
+        except Exception as exc:  # setup or run failure: not a verdict
+            print(f"leak-arena eval: run error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
 
+        code, reasons = gate(report, fail_on=args.fail_on, min_recall=args.min_recall)
+        report["gate"] = {"exit_code": code, "fail_on": args.fail_on, "min_recall": args.min_recall,
+                          "reasons": reasons}
         if fmt == "json":
             # Machine-readable: the report only, so the output parses as one JSON document.
             print(json.dumps(report | {"scale": scale_info}, indent=2))
-            return 0
+            return code
 
-        rows = seed_info["records_seeded_per_table"] + (
-            scale_info["synthetic_rows_per_table"] if scale_info else 0
-        )
+        from .dataset import BASELINE_SEED_SIZE
+
+        rows = BASELINE_SEED_SIZE + (scale_info["synthetic_rows_per_table"] if scale_info else 0)
         print(
             f"\n=== adk-leak-arena v{__version__} | Red-Team Evaluation Matrix "
-            f"(caller={args.caller}, top_k={args.top_k}, seed_size={rows} rows/table) ===\n"
+            f"(caller={args.caller}, top_k={args.top_k}, seed_size={rows} rows/table, "
+            f"targets={','.join(target_names)}) ===\n"
         )
         if scale_info:
             print(
@@ -324,10 +431,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"\n{meth['seed_records']} seed records across {len(meth['tenants'])} tenants | "
             f"{sum(meth['queries_per_scenario'].values())} queries | top_k={meth['top_k']} | "
             f"{meth['latency_repeats_per_query']} latency samples/query | "
-            f"untimed warmup: {warm.get('queries', 0)} queries x 2 targets ({warm.get('elapsed_ms', 0)} ms)"
+            f"untimed warmup: {warm.get('queries', 0)} queries x {len(target_names)} targets "
+            f"({warm.get('elapsed_ms', 0)} ms) | namespace: {meth['namespace']}"
         )
+        verdict = {EXIT_OK: "PASS", EXIT_FAIL: "FAIL", EXIT_ERROR: "ERROR"}[code]
+        print(f"\nCI gate (--fail-on {args.fail_on}"
+              + (f", --min-recall {args.min_recall}" if args.min_recall is not None else "")
+              + f"): {verdict} (exit {code})")
+        for reason in reasons:
+            print(f"  - {reason}")
         print()
-        return 0
+        return code
 
     return 1
 

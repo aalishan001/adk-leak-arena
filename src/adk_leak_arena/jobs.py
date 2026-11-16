@@ -13,7 +13,9 @@ from typing import Any
 
 from .config import ArenaConfig
 from .dataset import BASELINE_SEED_SIZE
-from .evaluator import SCENARIO_IDS, BenchmarkCancelled, run_full_benchmark
+from .namespaces import run_namespace
+from .targets import DEFAULT_TARGETS
+from .evaluator import DEFAULT_SCENARIO_IDS, BenchmarkCancelled, run_full_benchmark
 from .runner_pair import EngineMode, ensure_schema_and_seed
 from .scale import apply_seed_size, current_seed_size, delete_synthetic
 
@@ -34,9 +36,10 @@ class BenchmarkParams:
     engine: EngineMode = "deterministic_agent"
     top_k: int = 3
     seed_size: int = BASELINE_SEED_SIZE
-    scenarios: tuple[str, ...] = SCENARIO_IDS
+    scenarios: tuple[str, ...] = DEFAULT_SCENARIO_IDS
     repeats: int = 3
     label: str = "manual"
+    targets: tuple[str, ...] = DEFAULT_TARGETS
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +50,7 @@ class BenchmarkParams:
             "scenarios": list(self.scenarios),
             "repeats": self.repeats,
             "label": self.label,
+            "targets": list(self.targets),
         }
 
 
@@ -202,17 +206,43 @@ class BenchmarkJobManager:
             if job.cancel_event.is_set():
                 raise BenchmarkCancelled({})
             job.phase = "evaluating"
-            job.result = await run_full_benchmark(
-                cfg,
-                caller_id=p.caller_id,
-                engine=p.engine,
-                repeats=p.repeats,
-                top_k=p.top_k,
-                scenarios=p.scenarios,
-                progress=job.on_progress,
-                log=job.log,
-                cancel_event=job.cancel_event,
-            )
+            if tuple(p.targets) == DEFAULT_TARGETS:
+                # The 0.1.0 pair runs on the shared, already-seeded tables.
+                job.result = await run_full_benchmark(
+                    cfg,
+                    caller_id=p.caller_id,
+                    engine=p.engine,
+                    repeats=p.repeats,
+                    top_k=p.top_k,
+                    scenarios=p.scenarios,
+                    progress=job.on_progress,
+                    log=job.log,
+                    cancel_event=job.cancel_event,
+                )
+            else:
+                # Other target sets run in their own namespace (schema + collections),
+                # created here and dropped when the run ends.
+                ns = run_namespace(cfg, p.targets, isolated=True)
+                run_cfg, tset = await asyncio.to_thread(ns.__enter__)
+                job.log(f"namespace {run_cfg.schema}: targets {','.join(p.targets)} seeded")
+                try:
+                    if p.seed_size > BASELINE_SEED_SIZE:
+                        await asyncio.to_thread(apply_seed_size, run_cfg, p.seed_size)
+                    job.result = await run_full_benchmark(
+                        run_cfg,
+                        caller_id=p.caller_id,
+                        engine=p.engine,
+                        repeats=p.repeats,
+                        top_k=p.top_k,
+                        scenarios=p.scenarios,
+                        progress=job.on_progress,
+                        log=job.log,
+                        cancel_event=job.cancel_event,
+                        targets=tset,
+                    )
+                finally:
+                    await asyncio.to_thread(ns.__exit__, None, None, None)
+                    job.log(f"namespace {run_cfg.schema} dropped")
             outcome = "completed"
             job.log(f"completed {job.step}/{job.total_steps} steps in {job.result['elapsed_ms']} ms")
         except BenchmarkCancelled as exc:

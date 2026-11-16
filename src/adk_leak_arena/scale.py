@@ -24,7 +24,7 @@ from google.adk.memory.memory_entry import MemoryEntry
 from google.genai import types
 
 from .config import ArenaConfig
-from .dataset import BASELINE_SEED_SIZE, S6_FIXTURE_RECORDS, SeedRecord
+from .dataset import BASELINE_SEED_SIZE, SCENARIO_FIXTURES, SeedRecord
 from .embedding import get_cached_embed_fn
 from .unprotected_service import UnprotectedPgVectorMemoryService
 
@@ -85,7 +85,7 @@ _USERS_PER_TENANT = 40
 _STATE_LOCK = threading.Lock()
 _CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
 _FIXTURE_LOCK = threading.Lock()
-_FIXTURE_REFS = 0
+_FIXTURE_REFS: dict[str, int] = {}  # per database DSN (schema-scoped runs count separately)
 
 
 def current_seed_size() -> int:
@@ -95,11 +95,11 @@ def current_seed_size() -> int:
 
 def mark_baseline_reseeded() -> None:
     """Called after a full reseed (TRUNCATE + 36 rows): no synthetic or fixture rows remain."""
-    global _CURRENT_SEED_SIZE, _FIXTURE_REFS
+    global _CURRENT_SEED_SIZE
     with _STATE_LOCK:
         _CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
     with _FIXTURE_LOCK:
-        _FIXTURE_REFS = 0
+        _FIXTURE_REFS.clear()
 
 
 def _render(template: str, rng: np.random.Generator, i: int) -> str:
@@ -261,72 +261,99 @@ def apply_seed_size(config: ArenaConfig, seed_size: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 6 fixture (reference-counted so overlapping runs share one planting)
+# Scenario fixtures (S6 lures, S7 compartment rows), reference-counted so overlapping
+# runs share one planting
 # ---------------------------------------------------------------------------
 
 
-def _fixture_entry(rec: SeedRecord) -> MemoryEntry:
+def _fixture_entry(rec: SeedRecord, tag: str) -> MemoryEntry:
+    meta: dict[str, Any] = {
+        "scope": rec.scope,
+        "min_clearance": rec.min_clearance,
+        "seed_key": rec.key,
+        "persona_label": rec.persona_label,
+        "adversarial": rec.is_adversarial,
+        "fixture": tag,
+    }
+    if rec.compartments:
+        meta["compartments"] = list(rec.compartments)
     return MemoryEntry(
         content=types.Content(parts=[types.Part(text=rec.content)], role="user"),
         author="user",
-        custom_metadata={
-            "scope": rec.scope,
-            "min_clearance": rec.min_clearance,
-            "seed_key": rec.key,
-            "persona_label": rec.persona_label,
-            "adversarial": rec.is_adversarial,
-            "fixture": "S6",
-        },
+        custom_metadata=meta,
     )
 
 
-def _plant_records(config: ArenaConfig, records: Iterable[SeedRecord]) -> None:
+def _plant_records(config: ArenaConfig, records: Iterable[SeedRecord], tag: str) -> None:
     embed_fn = get_cached_embed_fn(config.embedding_model, config.embedding_dim)
 
     async def _plant() -> None:
         for rec in records:
-            # Each row is written by its owner at the owner's own clearance, through the
-            # same public add_memory API an agent would use; RLS WITH CHECK accepts it.
+            # Each row is written by its owner at the owner's own clearance and compartments,
+            # through the same public add_memory API an agent would use; RLS WITH CHECK accepts it.
             ms = MemShieldMemoryService(
                 dsn=config.db_dsn,
                 tenant_id=rec.tenant_id,
                 agent_clearance=rec.min_clearance,
+                compartments=list(rec.compartments),
                 embed_fn=embed_fn,
             )
-            await ms.add_memory(app_name=config.app_name, user_id=rec.user_id, memories=[_fixture_entry(rec)])
+            await ms.add_memory(app_name=config.app_name, user_id=rec.user_id, memories=[_fixture_entry(rec, tag)])
             unp = UnprotectedPgVectorMemoryService(
                 dsn=config.db_dsn,
                 tenant_id=rec.tenant_id,
                 agent_clearance=rec.min_clearance,
                 embed_fn=embed_fn,
             )
-            await unp.add_memory(app_name=config.app_name, user_id=rec.user_id, memories=[_fixture_entry(rec)])
+            await unp.add_memory(app_name=config.app_name, user_id=rec.user_id, memories=[_fixture_entry(rec, tag)])
 
     asyncio.run(_plant())
 
 
-def _acquire_s6(config: ArenaConfig) -> None:
-    global _FIXTURE_REFS
+def _acquire(config: ArenaConfig, tag: str, external: list[Any]) -> None:
+    records = SCENARIO_FIXTURES[tag]
     with _FIXTURE_LOCK:
-        if _FIXTURE_REFS == 0:
-            _delete_tagged(config, "fixture", "S6")
-            _plant_records(config, S6_FIXTURE_RECORDS)
-        _FIXTURE_REFS += 1
+        key = (config.db_dsn, tag)
+        refs = _FIXTURE_REFS.get(key, 0)
+        if refs == 0:
+            _delete_tagged(config, "fixture", tag)
+            _plant_records(config, records, tag)
+        _FIXTURE_REFS[key] = refs + 1
+    # Non-SQL targets get the same rows through their own write path.
+    for target in external:
+        target.delete_tagged("fixture", tag)
+        target.seed(records, extra={"fixture": tag})
 
 
-def _release_s6(config: ArenaConfig) -> None:
-    global _FIXTURE_REFS
+def _release(config: ArenaConfig, tag: str, external: list[Any]) -> None:
+    for target in external:
+        target.delete_tagged("fixture", tag)
     with _FIXTURE_LOCK:
-        _FIXTURE_REFS = max(0, _FIXTURE_REFS - 1)
-        if _FIXTURE_REFS == 0:
-            _delete_tagged(config, "fixture", "S6")
+        key = (config.db_dsn, tag)
+        refs = max(0, _FIXTURE_REFS.get(key, 0) - 1)
+        _FIXTURE_REFS[key] = refs
+        if refs == 0:
+            _delete_tagged(config, "fixture", tag)
 
 
 @asynccontextmanager
-async def s6_fixture(config: ArenaConfig) -> AsyncIterator[None]:
-    """Plant the Scenario 6 shared lures for the duration of the block, then remove them."""
-    await asyncio.to_thread(_acquire_s6, config)
+async def scenario_fixture(config: ArenaConfig, targets: Any = None, scenario_id: str | None = None) -> AsyncIterator[None]:
+    """Plant a scenario's fixture rows (S6, S7) for the duration of the block, then remove them.
+
+    ``targets`` (a TargetSet) adds the rows to its non-SQL targets too. Scenarios without a
+    fixture are a no-op.
+    """
+    if scenario_id not in SCENARIO_FIXTURES:
+        yield
+        return
+    external = targets.external() if targets is not None else []
+    await asyncio.to_thread(_acquire, config, scenario_id, external)
     try:
         yield
     finally:
-        await asyncio.to_thread(_release_s6, config)
+        await asyncio.to_thread(_release, config, scenario_id, external)
+
+
+def s6_fixture(config: ArenaConfig, targets: Any = None) -> Any:
+    """Scenario 6 fixture (kept for callers of 0.1.0)."""
+    return scenario_fixture(config, targets, "S6")

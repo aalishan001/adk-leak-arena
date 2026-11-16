@@ -92,11 +92,12 @@ def test_ui_and_state_endpoints(client: TestClient) -> None:
     assert resp_state.status_code == 200
     state = resp_state.json()
     assert state["arena_version"] == __version__
-    assert len(state["presets"]) == 6  # S1-S5 attacks + S6 boundary
-    assert state["attack_ids"] == ["S1", "S2", "S3", "S4", "S5"]
+    assert len(state["presets"]) == 9  # S1-S5 attacks, S6 boundary, S7-S9 (0.2.0 controls)
+    assert state["default_scenario_ids"] == ["S1", "S2", "S3", "S4", "S5", "S6", "CONTROL"]
+    assert state["attack_ids"] == ["S1", "S2", "S3", "S4", "S5", "S7", "S8", "S9"]
     assert state["top_k_options"] == [1, 3, 5, 10, 20]
     assert state["seed_size_options"] == [36, 250, 500, 1000, 2000]
-    assert len(state["personas"]) == 2
+    assert len(state["personas"]) == 3  # alice_analyst, exec_agent, orion_analyst (S7)
     assert len(state["seed_records"]) == len(SEED_RECORDS)
     assert "KMS-ROOT-8821-OMEGA" in state["canary_tokens"]
     assert state["engines"]["deterministic_agent"]["available"] is True
@@ -713,6 +714,11 @@ def test_console_run_button_is_the_only_execution_trigger(client: TestClient) ->
     # runAttack is bound only to the Run button and the explicit Probe Injected Lure button.
     assert html.count('addEventListener("click", runAttack)') == 1
     assert len(re.findall(r"(?<!function )(?<![.\w])runAttack\(\)", html)) == 1  # the Probe call
-    for label in ("Running Deterministic ADK...", "Running Ollama (gemma3:4b)...", "Running Gemini 2.5 Flash..."):
-        assert label in html
+    # Engine labels come from the server config, not from hardcoded model names.
+    assert "Gemini 2.5" not in html
+    assert "arena.engine_labels" in html
+    labels = client.get("/api/state").json()["engine_labels"]
+    cfg = ArenaConfig()
+    assert labels["gemini_api"] == f"Running Gemini ({cfg.gemini_model})..."
+    assert labels["ollama_gemma"].startswith("Running Ollama (")
     assert "select option" in html and "background-color: #0f172a; color: #f8fafc;" in html

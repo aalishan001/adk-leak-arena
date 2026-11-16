@@ -296,6 +296,22 @@
     @media (prefers-reduced-motion: reduce) { #btnRunAttack.ready { animation: none; } }
 
     /* Performance & RLS kernel overhead strip */
+    .extra-targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 16px; }
+    .extra-targets:empty { display: none; }
+    .xt-card { background: var(--panel, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 12px; min-width: 0; }
+    .xt-card h3 { margin: 0 0 4px; font: 700 13px var(--sans); color: #e2e8f0; overflow-wrap: anywhere; }
+    .xt-meta { font: 500 11px var(--mono, monospace); color: #94a3b8; margin-bottom: 8px; overflow-wrap: anywhere; }
+    .xt-verdict { display: inline-flex; align-items: center; gap: 6px; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 8px; border-radius: 999px; }
+    .xt-verdict.leak { background: rgba(239,68,68,0.15); color: #fca5a5; }
+    .xt-verdict.ok { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+    .xt-verdict.na { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+    .xt-rows { margin: 8px 0 0; padding: 0; list-style: none; font: 12px var(--sans); color: #cbd5e1; }
+    .xt-rows li { padding: 4px 0; border-top: 1px solid #1e293b; overflow-wrap: anywhere; }
+    .xt-rows li.leaked { color: #fca5a5; }
+    .target-picker { position: relative; }
+    .target-picker summary { cursor: pointer; font: 600 12px var(--sans); color: #cbd5e1; padding: 6px 10px; border: 1px solid #334155; border-radius: 8px; list-style: none; }
+    .target-picker .tp-list { position: absolute; z-index: 20; margin-top: 4px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; min-width: 220px; }
+    .target-picker label { display: flex; gap: 8px; align-items: center; font: 12px var(--sans); color: #e2e8f0; padding: 3px 0; }
     .perf-strip {
       margin: 0 16px 12px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 7px;
       background: var(--panel); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
@@ -338,6 +354,10 @@
         <option value="ollama_gemma">ollama_gemma</option>
         <option value="gemini_api">gemini_api</option>
       </select>
+      <details class="target-picker" id="targetPicker">
+        <summary title="Memory targets to attack side by side">Targets: <span id="targetPickerSummary">unprotected, memshield</span></summary>
+        <div class="tp-list" id="targetPickerList"></div>
+      </details>
       <button class="btn" id="btnDataset" type="button">Seeded dataset</button>
       <button class="btn btn-bench" id="btnBenchmark" type="button">
         <svg class="svg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 1.5L3 9h4.5l-1 5.5L13 7H8.5l1-5.5z"/></svg>
@@ -465,6 +485,7 @@
     <section class="pane left" id="pane-left" aria-label="Unprotected pgvector target"></section>
     <section class="pane right" id="pane-right" aria-label="adk-memshield target"></section>
   </main>
+  <section class="extra-targets" id="extraTargets" aria-label="Additional memory targets"></section>
 
   <div class="modal" id="benchmarkModal" role="dialog" aria-modal="true" aria-labelledby="benchTitle">
     <div class="modal-panel">
@@ -752,11 +773,63 @@
       markReadyToRun();
     }
 
+    // Defaults; replaced by /api/state engine_labels (derived from the server config).
     const ENGINE_RUN_LABELS = {
       deterministic_agent: "Running Deterministic ADK...",
-      ollama_gemma: "Running Ollama (gemma3:4b)...",
-      gemini_api: "Running Gemini 2.5 Flash...",
+      ollama_gemma: "Running Ollama...",
+      gemini_api: "Running Gemini...",
     };
+
+    // ARENA_PUBLIC_MODE: hide everything that writes to the corpus or starts a job.
+    function applyPublicMode() {
+      if (!arena || !arena.public_mode) return;
+      for (const id of ["injectPanel", "btnReset", "btnStartBenchmark", "btnKillBenchmark"]) {
+        const el = $(id);
+        if (el) el.hidden = true;
+      }
+    }
+
+    function selectedTargets() {
+      const boxes = document.querySelectorAll("#targetPickerList input[type=checkbox]");
+      const picked = Array.from(boxes).filter(b => b.checked).map(b => b.value);
+      return picked.length >= 2 ? picked : ["unprotected", "memshield"];
+    }
+
+    function buildTargetPicker() {
+      const list = $("targetPickerList");
+      if (!list || !arena || !arena.targets) return;
+      const defaults = new Set(arena.targets.default || ["unprotected", "memshield"]);
+      list.innerHTML = (arena.targets.available || []).map(name =>
+        `<label><input type="checkbox" value="${esc(name)}" ${defaults.has(name) ? "checked" : ""}/> ${esc(name)}</label>`
+      ).join("");
+      list.querySelectorAll("input").forEach(b => b.addEventListener("change", () => {
+        $("targetPickerSummary").textContent = selectedTargets().join(", ");
+        markReadyToRun();
+      }));
+    }
+
+    function renderExtraTargets(data) {
+      const box = $("extraTargets");
+      if (!box) return;
+      const order = (data.target_order || []).filter(n => n !== "unprotected" && n !== "memshield");
+      box.innerHTML = order.map(name => {
+        const pane = (data.targets || {})[name] || {};
+        if (pane.applicable === false) {
+          return `<article class="xt-card"><h3>${esc(pane.label || name)}</h3>
+            <span class="xt-verdict na">${pane.configuration_refused ? "refused (configuration)" : "n/a"}</span><div class="xt-meta">${esc(pane.reason || "")}</div></article>`;
+        }
+        const v = pane.verdict || {};
+        const leaked = (v.leaked_row_count || 0) > 0;
+        const tel = pane.telemetry || {};
+        const rows = (v.rows_inspected || []).map(r =>
+          `<li class="${r.authorized === false ? "leaked" : ""}">${esc(r.tenant_id || "?")}/${esc(r.user_id || "?")}: ${esc((r.content || "").slice(0, 140))}</li>`
+        ).join("");
+        return `<article class="xt-card"><h3>${esc(pane.label || name)}</h3>
+          <div class="xt-meta">${esc(String(tel.rls_enforcement || ""))} | ${Number(tel.latency_ms || 0).toFixed(2)} ms</div>
+          <span class="xt-verdict ${leaked ? "leak" : "ok"}">${leaked ? "leak" : "isolated"} ${v.leaked_row_count || 0}/${v.total_rows || 0}</span>
+          <ul class="xt-rows">${rows}</ul></article>`;
+      }).join("");
+    }
     const RUN_IDLE_LABEL = "Run Side-by-Side Query";
 
     function markReadyToRun() {
@@ -936,13 +1009,15 @@
           simulate_missing_app_filter: $("chaosCheckbox").checked,
           engine: $("engineSelect").value,
           top_k: Number($("topKSelect").value || 3),
+          targets: selectedTargets(),
         });
         if (seq !== requestSeq) return;
         if (data.canary_tokens) rebuildCanaryRegex(data.canary_tokens);
         if (data.seed_size) $("seedSizeSelect").value = String(data.seed_size);
-        renderPane("left", data.unprotected);
-        renderPane("right", data.memshield);
+        if (data.unprotected) renderPane("left", data.unprotected);
+        if (data.memshield) renderPane("right", data.memshield);
         renderPerfStrip(data.performance);
+        renderExtraTargets(data);
       } catch (err) {
         if (seq === requestSeq) showError(err.message);
       } finally {
@@ -1031,6 +1106,9 @@
         $("seedSizeSelect").value = "36";
         $("injectResultBox").style.display = "none";
         arena = await api("/api/state");
+        Object.assign(ENGINE_RUN_LABELS, arena.engine_labels || {});
+        applyPublicMode();
+        buildTargetPicker();
         rebuildCanaryRegex(arena.canary_tokens);
         markReadyToRun();
       } catch (err) {
@@ -1418,6 +1496,9 @@
       wire();
       try {
         arena = await api("/api/state");
+        Object.assign(ENGINE_RUN_LABELS, arena.engine_labels || {});
+        applyPublicMode();
+        buildTargetPicker();
       } catch (err) {
         showError("Could not load /api/state — is the database up?\n" + err.message);
         return;

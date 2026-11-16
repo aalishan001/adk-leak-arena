@@ -27,11 +27,12 @@ from .dataset import (
     INJECTOR_PERSONAS,
     PRESET_BY_ID,
     S6_FIXTURE_RECORDS,
+    S7_FIXTURE_RECORDS,
     SEED_RECORDS,
     TENANTS,
     canary_tokens,
 )
-from .evaluator import ATTACK_IDS, SCENARIO_IDS
+from .evaluator import ATTACK_IDS, DEFAULT_SCENARIO_IDS, SCENARIO_IDS
 from .injector import inject_memory
 from .jobs import BenchmarkJobManager, BenchmarkParams, JobConflict, RunHistory
 from .runner_pair import (
@@ -42,6 +43,7 @@ from .runner_pair import (
     run_side_by_side_comparison,
 )
 from .scale import SEED_SIZE_OPTIONS, TOP_K_OPTIONS, apply_seed_size, current_seed_size
+from .targets import DEFAULT_TARGETS, TARGET_CLASSES, parse_targets
 from .unprotected_service import FailureMode
 
 logger = logging.getLogger(__name__)
@@ -92,8 +94,14 @@ class AttackRequest(BaseModel):
     spoofed_user_id: str | None = Field(default=None, pattern=_IDENTIFIER_PATTERN)
     engine: EngineMode = Field(default="deterministic_agent")
     top_k: int = Field(default=3, ge=1, le=20)
+    targets: list[str] = Field(default_factory=lambda: list(DEFAULT_TARGETS), min_length=2, max_length=8)
 
     check_caller = field_validator("caller_id")(_validate_caller)
+
+    @field_validator("targets")
+    @classmethod
+    def check_targets(cls, value: list[str]) -> list[str]:
+        return list(parse_targets(value))
 
     @field_validator("query")
     @classmethod
@@ -109,11 +117,17 @@ class BenchmarkRequest(BaseModel):
     repeats: int = Field(default=3, ge=1, le=10)
     top_k: int = Field(default=3, ge=1, le=20)
     seed_size: int = Field(default=BASELINE_SEED_SIZE)
-    scenarios: list[str] = Field(default_factory=lambda: list(SCENARIO_IDS), min_length=1)
+    scenarios: list[str] = Field(default_factory=lambda: list(DEFAULT_SCENARIO_IDS), min_length=1)
     label: str = Field(default="manual", pattern=r"^[A-Za-z0-9 _.\-]{1,40}$")
+    targets: list[str] = Field(default_factory=lambda: list(DEFAULT_TARGETS), min_length=2, max_length=8)
 
     check_caller = field_validator("caller_id")(_validate_caller)
     check_seed = field_validator("seed_size")(_validate_seed_size)
+
+    @field_validator("targets")
+    @classmethod
+    def check_targets(cls, value: list[str]) -> list[str]:
+        return list(parse_targets(value))
 
     @field_validator("scenarios")
     @classmethod
@@ -132,6 +146,7 @@ class BenchmarkRequest(BaseModel):
             scenarios=tuple(self.scenarios),
             repeats=self.repeats,
             label=self.label,
+            targets=tuple(self.targets),
         )
 
 
@@ -192,6 +207,12 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             if not _INITIALIZED:
                 await asyncio.to_thread(ensure_schema_and_seed, cfg)
                 _INITIALIZED = True
+
+    def _reject_if_public(action: str) -> None:
+        # ARENA_PUBLIC_MODE: a read-only console for public deployments. Attacks (searches)
+        # still run; nothing that changes the corpus or starts a job is accepted.
+        if cfg.public_mode:
+            raise HTTPException(status_code=403, detail=f"cannot {action}: the arena runs in public (read-only) mode")
 
     def _reject_if_running(action: str) -> None:
         if jobs.running:
@@ -268,6 +289,16 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             },
             "ollama": ollama,
             "gemini_available": bool(cfg.gemini_api_key),
+            "engine_labels": {
+                "deterministic_agent": "Running Deterministic ADK...",
+                "ollama_gemma": f"Running Ollama ({cfg.ollama_model.split('/', 1)[-1]})...",
+                "gemini_api": f"Running Gemini ({cfg.gemini_model})...",
+            },
+            "public_mode": cfg.public_mode,
+            "targets": {
+                "default": list(DEFAULT_TARGETS),
+                "available": sorted(TARGET_CLASSES),
+            },
             "db_posture": posture,
             "tenants": list(TENANTS),
             "canary_tokens": list(canary_tokens()),
@@ -276,15 +307,18 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             "presets": [asdict(p) for p in ALL_PRESETS],
             "attack_ids": list(ATTACK_IDS),
             "scenario_ids": list(SCENARIO_IDS),
+            "default_scenario_ids": list(DEFAULT_SCENARIO_IDS),
             "control_queries": [asdict(q) for q in CONTROL_QUERIES],
             "seed_records": [asdict(r) for r in SEED_RECORDS],
             "s6_fixture_records": [asdict(r) for r in S6_FIXTURE_RECORDS],
+            "s7_fixture_records": [asdict(r) for r in S7_FIXTURE_RECORDS],
             "benchmark": jobs.status(since=10**9),
         }
 
     @app.post("/api/reset")
     async def reset_database() -> dict[str, Any]:
         global _INITIALIZED
+        _reject_if_public("reset the database")
         _reject_if_running("reset the database")
         async with seed_lock:
             res = await asyncio.to_thread(ensure_schema_and_seed, cfg)
@@ -293,6 +327,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/scale")
     async def scale_database(req: ScaleRequest) -> dict[str, Any]:
+        _reject_if_public("rescale the database")
         _reject_if_running("rescale the database")
         await _ensure_seeded()
         async with seed_lock:
@@ -314,6 +349,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             spoofed_user_id=req.spoofed_user_id,
             engine=req.engine,
             top_k=req.top_k,
+            targets=req.targets,
         )
         result["seed_size"] = current_seed_size()
         result["benchmark_running"] = jobs.running
@@ -322,6 +358,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/inject")
     async def inject(req: InjectRequest) -> dict[str, Any]:
+        _reject_if_public("inject memories")
         _reject_if_running("inject memories")
         await _ensure_seeded()
         result = await inject_memory(
@@ -338,6 +375,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/benchmark/start")
     async def start_benchmark(req: BenchmarkRequest | None = None) -> dict[str, Any]:
+        _reject_if_public("start a benchmark")
         await _ensure_seeded()
         try:
             job = jobs.start((req or BenchmarkRequest()).to_params())
@@ -351,11 +389,13 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/benchmark/kill")
     async def kill_benchmark() -> dict[str, Any]:
+        _reject_if_public("stop a benchmark")
         return await jobs.kill()
 
     @app.post("/api/benchmark")
     async def execute_benchmark(req: BenchmarkRequest | None = None) -> dict[str, Any]:
         """Synchronous convenience wrapper: runs a job and waits for its report."""
+        _reject_if_public("start a benchmark")
         await _ensure_seeded()
         try:
             job = jobs.start((req or BenchmarkRequest()).to_params())

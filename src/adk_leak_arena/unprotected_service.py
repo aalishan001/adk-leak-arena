@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
@@ -25,8 +26,39 @@ FailureMode = Literal[
     "swarm_missing_clearance_filter",
     "strip_all_where_filters",
     "same_tier_shared_poisoning",
+    "missing_compartment_filter",
+    "forged_identity",
+    "pooled_session_bleed",
     "control",
 ]
+
+# S9: the caller whose request ran on the pooled connection just before this one.
+S9_PREVIOUS_CALLER = "bob_cfo"
+
+_BLEED_POOLS: dict[str, ConnectionPool] = {}
+_BLEED_LOCK = threading.Lock()
+
+
+def _bleed_pool(dsn: str) -> ConnectionPool:
+    """One-connection pool with no reset callback: the naive app's pool in S9."""
+    with _BLEED_LOCK:
+        pool = _BLEED_POOLS.get(dsn)
+        if pool is None:
+            pool = ConnectionPool(dsn, min_size=1, max_size=1, open=True, name="arena-s9-baseline")
+            _BLEED_POOLS[dsn] = pool
+        return pool
+
+
+def close_bleed_pool(dsn: str) -> None:
+    with _BLEED_LOCK:
+        pool = _BLEED_POOLS.pop(dsn, None)
+    if pool is not None:
+        pool.close()
+
+
+class IdentityRebindError(RuntimeError):
+    """Raised by the S9 baseline's identity rebind (the error its handler swallows)."""
+
 
 _SPOOF_USER_RE = re.compile(r"(?:target_user_id|user_id)\s*=\s*([a-zA-Z0-9_]+)", re.IGNORECASE)
 
@@ -51,6 +83,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         dsn: str,
         tenant_id: str = "acme_corp",
         agent_clearance: int = 1,
+        agent_compartments: Sequence[str] = (),
         top_k: int = 3,
         table_name: str = "memories_unprotected",
         failure_mode: FailureMode = "shared_tenant_no_user_filter",
@@ -64,6 +97,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         self.dsn = dsn
         self.tenant_id = tenant_id
         self.agent_clearance = agent_clearance
+        self.agent_compartments = list(agent_compartments)
         self.top_k = top_k
         self.table_name = table_name
         self.failure_mode: FailureMode = failure_mode
@@ -133,7 +167,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         custom_metadata: Mapping[str, object] | None,
     ) -> None:
         base_meta = dict(custom_metadata) if custom_metadata else {}
-        prepared: list[tuple[MemoryEntry, str, str, str, int, str | None, dict[str, Any]]] = []
+        prepared: list[tuple[MemoryEntry, str, str, str, int, list[str], str | None, dict[str, Any]]] = []
 
         for entry in memories:
             text = _extract_text_from_content(entry.content)
@@ -142,9 +176,10 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             merged_meta = {**base_meta, **(entry.custom_metadata or {})}
             scope = str(merged_meta.pop("scope", "private"))
             min_clearance = int(merged_meta.pop("min_clearance", 1))
+            compartments = [str(c) for c in (merged_meta.pop("compartments", None) or [])]
             session_id = merged_meta.pop("session_id", None)
             author = entry.author or "user"
-            prepared.append((entry, text, author, scope, min_clearance, session_id, merged_meta))
+            prepared.append((entry, text, author, scope, min_clearance, compartments, session_id, merged_meta))
 
         if not prepared:
             return
@@ -155,9 +190,9 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         insert_sql = f"""
             INSERT INTO {self.table_name} (
                 app_name, tenant_id, user_id, session_id, author,
-                scope, min_clearance, content, custom_metadata, embedding
+                scope, min_clearance, compartments, content, custom_metadata, embedding
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::vector)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::text[], %s, %s::jsonb, %s::vector)
             ON CONFLICT (app_name, tenant_id, user_id, session_id, (custom_metadata->>'event_id'))
                 WHERE custom_metadata ? 'event_id'
                 DO NOTHING
@@ -174,6 +209,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
                         author,
                         scope,
                         min_clearance,
+                        compartments,
                         session_id,
                         meta,
                     ), vec in zip(prepared, embeddings, strict=True):
@@ -187,6 +223,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
                                 author,
                                 scope,
                                 min_clearance,
+                                compartments,
                                 text,
                                 json.dumps(meta),
                                 _format_vector(vec),
@@ -242,7 +279,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             SELECT
                 id, app_name, tenant_id, user_id, session_id, author,
                 scope, min_clearance, content, custom_metadata, created_at,
-                1 - (embedding <=> %s::vector) AS similarity
+                1 - (embedding <=> %s::vector) AS similarity, compartments
             FROM {self.table_name}
         """
 
@@ -298,8 +335,9 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             }
             return sql, params, ctx
 
-        if effective_mode == "param_spoof_user_id":
-            # S3: Confused-deputy tool call where target_user_id from prompt/tool args overrides caller user_id
+        if effective_mode in ("param_spoof_user_id", "forged_identity"):
+            # S3: Confused-deputy tool call where target_user_id from prompt/tool args overrides caller user_id.
+            # S8: same query; the app has a verified session token but trusts the id the tool passes.
             target_user = self.spoofed_user_id or extract_spoofed_user_id(query) or "bob_cfo"
             sql = f"""{select_cols}
             WHERE app_name = %s AND tenant_id = %s
@@ -310,7 +348,11 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             params = (vec_literal, app_name, self.tenant_id, target_user, vec_literal, self.top_k)
             ctx = {
                 "rls_policy": "DISABLED (Table has no Row-Level Security)",
-                "failure_mode": f"param_spoof_user_id (Tool arg overrode user_id='{target_user}')",
+                "failure_mode": (
+                    f"param_spoof_user_id (Tool arg overrode user_id='{target_user}')"
+                    if effective_mode == "param_spoof_user_id"
+                    else f"forged_identity (tool-supplied user_id='{target_user}' trusted over the session token)"
+                ),
                 "authenticated_session_user": user_id,
                 "spoofed_sql_param_user": target_user,
             }
@@ -333,11 +375,49 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             }
             return sql, params, ctx
 
+        if effective_mode == "missing_compartment_filter":
+            # S7: owner, tenant and clearance are checked; the compartment check is missing.
+            sql = f"""{select_cols}
+            WHERE app_name = %s AND tenant_id = %s
+              AND (user_id = %s OR (scope = 'tenant_shared' AND min_clearance <= %s))
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """
+            params = (vec_literal, app_name, self.tenant_id, user_id, self.agent_clearance, vec_literal, self.top_k)
+            ctx = {
+                "rls_policy": "DISABLED (Table has no Row-Level Security)",
+                "failure_mode": "missing_compartment_filter (Missing compartments && caller_compartments)",
+                "app_filter_bound": f"tenant_id='{self.tenant_id}', user_id='{user_id}', clr<={self.agent_clearance} (compartments unchecked!)",
+            }
+            return sql, params, ctx
+
+        comp_literal = self.agent_compartments
+        if effective_mode == "pooled_session_bleed":
+            # S9: the owner check reads the session-level setting the app SETs per request.
+            sql = f"""{select_cols}
+            WHERE app_name = %s AND tenant_id = %s
+              AND (user_id = current_setting('app.current_user_id', true)
+                   OR (scope = 'tenant_shared' AND min_clearance <= %s
+                       AND (cardinality(compartments) = 0 OR compartments && %s::text[])))
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """
+            params = (
+                vec_literal, app_name, self.tenant_id, self.agent_clearance, comp_literal, vec_literal, self.top_k,
+            )
+            ctx = {
+                "rls_policy": "DISABLED (App-layer filter only)",
+                "failure_mode": "pooled_session_bleed (session-level SET; rebind error swallowed)",
+                "authenticated_session_user": user_id,
+            }
+            return sql, params, ctx
+
         # Control mode (and S6): complete, correct application-layer filter. In S6 the
         # same-tier shared lure is *authorized* here and under RLS alike.
         sql = f"""{select_cols}
         WHERE app_name = %s AND tenant_id = %s
-          AND (user_id = %s OR (scope = 'tenant_shared' AND min_clearance <= %s))
+          AND (user_id = %s OR (scope = 'tenant_shared' AND min_clearance <= %s
+                                AND (cardinality(compartments) = 0 OR compartments && %s::text[])))
         ORDER BY embedding <=> %s::vector
         LIMIT %s
         """
@@ -347,6 +427,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             self.tenant_id,
             user_id,
             self.agent_clearance,
+            comp_literal,
             vec_literal,
             self.top_k,
         )
@@ -360,6 +441,28 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
             "app_filter_bound": f"tenant_id='{self.tenant_id}', user_id='{user_id}', clr<={self.agent_clearance}",
         }
         return sql, params, ctx
+
+    def _bind_session_identity(self, conn: Any, user_id: str, *, fail: bool) -> None:
+        """The S9 baseline's per-request bind: a session-level SET (no LOCAL)."""
+        if fail:
+            raise IdentityRebindError("identity lookup timed out")
+        conn.execute("SELECT set_config('app.current_user_id', %s, false)", (user_id,))
+
+    def _execute_bleed(self, sql: str, params: tuple[Any, ...], user_id: str, ctx: dict[str, str]) -> list[Any]:
+        pool = _bleed_pool(self.dsn)
+        with pool.connection() as conn:  # the previous request on this pooled connection
+            self._bind_session_identity(conn, S9_PREVIOUS_CALLER, fail=False)
+        with pool.connection() as conn:  # this request reuses the same connection
+            try:
+                self._bind_session_identity(conn, user_id, fail=True)
+            except IdentityRebindError as exc:
+                ctx["swallowed_error"] = f"IdentityRebindError: {exc} (request continued)"
+            ctx["session_user_setting"] = str(
+                conn.execute("SELECT current_setting('app.current_user_id', true)").fetchone()[0]
+            )
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchall()
 
     def _search_memory_sync(
         self,
@@ -379,11 +482,14 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         )
 
         t0 = time.perf_counter()
-        with self._pool.connection() as conn:
-            with conn.transaction():
-                with conn.cursor() as cur:
-                    cur.execute(sql, params)
-                    rows = cur.fetchall()
+        if ctx.get("failure_mode", "").startswith("pooled_session_bleed"):
+            rows = self._execute_bleed(sql, params, user_id, ctx)
+        else:
+            with self._pool.connection() as conn:
+                with conn.transaction():
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        rows = cur.fetchall()
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
         results: list[MemoryEntry] = []
@@ -401,6 +507,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
                 row_custom_meta,
                 row_created_at,
                 row_similarity,
+                row_compartments,
             ) = row
 
             meta_dict: dict[str, Any] = (
@@ -414,6 +521,7 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
                     "session_id": row_session_id,
                     "scope": row_scope,
                     "min_clearance": int(row_min_clearance),
+                    "compartments": list(row_compartments or []),
                     "similarity": float(row_similarity),
                 }
             )
