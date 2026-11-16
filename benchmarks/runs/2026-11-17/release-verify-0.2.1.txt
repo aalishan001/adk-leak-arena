@@ -1,0 +1,26 @@
+# adk-leak-arena 0.2.1 verification, 2026-11-16T17:03:46Z
+# PyPI sha256 (match GitHub Release assets): wheel f1b8d1786e263e79e2af44a67d720550eeca65af4a0c32e03f48113c464f21a7 sdist 7dd8bdc08bceeea502a929c309b93d601490b9c291e2422839e0022162704098
+## 1. pip install --index-url https://pypi.org/simple 'adk-leak-arena[qdrant]==0.2.1' in python:3.12-slim; leak-arena eval --repeats 1
+Name: adk-leak-arena
+Version: 0.2.1
+Name: adk-memshield
+Version: 0.2.1
+│ Attack Aggregate      │ Unprotected pgvector   │   97.5% │     63.2% │       72.5% │       87.5% │   86.4% n=22 │    2.79/14.09 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │  100.0% n=22 │     2.64/6.74 │     -0.15 │
+CI gate (--fail-on leak): PASS (exit 0)
+## 2. GHCR image (anonymous pull)
+Digest:    sha256:53321df9920185270da16f97633902795e4f2768f80a8f8795cf701a3cc8e19e
+  Platform:  linux/amd64
+  Platform:  linux/arm64
+### 2a. public mode WITH ARENA_ADMIN_DSN (expected: refuses to start)
+    raise PublicModeConfigurationError(
+adk_leak_arena.server.PublicModeConfigurationError: ARENA_PUBLIC_MODE=1 must not be given ARENA_ADMIN_DSN: seed with `leak-arena seed` in a separate job and give the web process only the application role
+(the server process exited during startup; the line above is its error)
+### 2b. public mode with a superuser as the application DSN (expected: refuses to start)
+    raise PublicModeConfigurationError(
+adk_leak_arena.server.PublicModeConfigurationError: ARENA_PUBLIC_MODE=1 refuses to run as role 'postgres': it is a superuser; it has BYPASSRLS; it owns an arena table (or is a member of its owner role)
+### 2c. public mode with only the application DSN (expected: ready; attack runs; inject 403)
+uid=10001(arena) gid=10001(arena) groups=10001(arena)
+readyz b'{"status":"ready","public_mode":true}'
+attack S5 200 unprotected leaked 3 memshield leaked 0
+inject 403
