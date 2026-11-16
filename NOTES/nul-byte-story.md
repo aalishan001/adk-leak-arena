@@ -1,7 +1,7 @@
 # The NUL byte that looked like a security pass
 
 Rough notes, facts only. Times are UTC (IST = UTC+5:30). Sources:
-- **[transcript]** the Claude Code session log for this repo (`05a570f6-…jsonl`, local, not in git);
+- **[transcript]** the local development session log for this repo (`05a570f6-…jsonl`, not in git);
 - **[git]** this repo's history and the `fix/preload-memory-error-handling` branch of `aalishan001/adk-python`;
 - **[PR]** google/adk-python#7723, read from the public PR page and the public GitHub REST API on
   2026-10-25 ~23:36Z (not with `gh`);

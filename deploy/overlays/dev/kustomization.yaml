@@ -26,3 +26,6 @@ patches:
       - op: replace
         path: /data/ARENA_PUBLIC_MODE
         value: "0"
+      - op: add
+        path: /data/ARENA_QDRANT_URL
+        value: http://adk-leak-arena-qdrant:6333

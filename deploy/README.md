@@ -15,9 +15,9 @@ It runs `leak-arena serve` on port 8090 as an unprivileged user (uid 10001) and 
 | --- | --- |
 | `ARENA_DB_DSN` / `MEMSHIELD_DB_DSN` | Application role (`memshield_app`: `NOSUPERUSER`, `NOBYPASSRLS`). Every measured read uses it. |
 | `ARENA_ADMIN_DSN` | Schema owner. Used by `leak-arena seed`, synthetic stress loads and per-run schemas. |
-| `ARENA_PUBLIC_MODE` | `1` = read-only console: attacks run; inject, reset, rescale and benchmark jobs return 403 and are hidden. Use it for any public deployment. |
+| `ARENA_PUBLIC_MODE` | `1` = read-only console: attacks run (deterministic engine, PostgreSQL targets, no fixture-planting S6/S7); inject, reset, rescale, benchmark jobs and history deletion return 403 and are hidden. Use it for any public deployment. |
 | `ARENA_STARTUP_BASELINE` | `1` runs a baseline benchmark at startup to fill the history panel. |
-| `ARENA_QDRANT_URL` | Optional: enables the `qdrant` and `mem0` targets. |
+| `ARENA_QDRANT_URL` | Qdrant endpoint for the `qdrant` and `mem0` targets (default `http://localhost:56333`; set in the dev overlay). Unused in public mode, which offers only the PostgreSQL targets. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional: the `gemini_api` engine (default model `gemini-3.8-flash`). |
 
 Probes: `GET /healthz` (process up) and `GET /readyz` (the application DSN answers `SELECT 1`; 503 otherwise).
@@ -56,7 +56,7 @@ kubectl -n adk-leak-arena create secret generic adk-leak-arena-db \
 kubectl apply -k deploy/overlays/production
 ```
 
-`leak-arena seed` (the Job) creates the `memshield_app` role if it does not exist, with the development password from `sql/init_arena.sql`. On any shared database create the role yourself first (`CREATE ROLE memshield_app LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS`) or rotate it right after seeding (`ALTER ROLE memshield_app PASSWORD '...'`). The admin DSN must not be a role the arena uses for reads: the posture probe and adk-memshield both refuse a superuser or `BYPASSRLS` application role.
+`leak-arena seed` (the Job) creates the `memshield_app` role if it does not exist, with the development password from `sql/init_arena.sql`. On any shared database create the role yourself first (`CREATE ROLE memshield_app LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS`) or rotate it right after seeding (`ALTER ROLE memshield_app PASSWORD '...'`). The application DSN must not be a superuser or `BYPASSRLS` role: adk-memshield refuses to run on one (the arena shows `refused (config)`), and the arena's posture probe reports it in the telemetry.
 
 Validation: both overlays build with kustomize v5.8.3 and pass `kubeconform -strict` against Kubernetes 1.33.0 (`benchmarks/runs/2026-11-16/kubeconform.txt`). They were not applied to a live cluster in this release.
 

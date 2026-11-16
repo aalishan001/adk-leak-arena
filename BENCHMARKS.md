@@ -2,18 +2,22 @@
 
 ## 0.2.0 runs (2026-11-16)
 
-All 0.2.0 numbers come from runs on 2026-11-16 (UTC) against **adk-memshield 0.2.0 installed from PyPI**. Each raw output in [`benchmarks/runs/2026-11-16/`](benchmarks/runs/2026-11-16/) starts with its command and the versions it ran with; `benchmarks/run_v020.sh` re-runs the eval set and `*.cmd` files hold the prepared-mode commands. No run was adjusted, filtered or re-tried to reach a number.
+All 0.2.0 numbers come from runs on 2026-11-16 (UTC) against **adk-memshield 0.2.0 installed from PyPI**. The eval, EXPLAIN and test outputs ran on the source of commit `00f5189` plus the version bump in the release commit; the prepared-mode outputs ran on `c4074a1` (the prepared-mode code has not changed since, apart from closing an extra pool). No run was adjusted, filtered or re-tried to reach a number.
+
+Where to find each command: the `eval-*.txt`, `explain-*.txt` and `pytest.txt` files start with their command, date and package versions (re-run them with `benchmarks/run_v020.sh`); each `prepared-*.json` / `.log` has its command in the matching `.cmd` file and the versions below; `kubeconform.txt` names the tool versions it ran; `image-nonroot-smoke.txt` records the local image check.
 
 | Item | Value |
 | :--- | :--- |
-| Packages | adk-leak-arena 0.2.0 (this tree), adk-memshield 0.2.0 (PyPI), google-adk 2.14.1, psycopg 3.3.9, qdrant-client 1.20.0, mem0ai 2.2.1, fastembed 0.9.1, Python 3.12.15 |
+| Packages | adk-leak-arena 0.2.0, adk-memshield 0.2.0 (PyPI), google-adk 2.14.1, psycopg 3.3.9, qdrant-client 1.20.0, mem0ai 2.2.1, fastembed 0.9.1, Python 3.12.15 |
 | Stores | PostgreSQL 16.15 + pgvector 0.8.7 (`pgvector/pgvector:pg16`); Qdrant server 1.20.0 (`qdrant/qdrant:v1.20.0`); Mem0 OSS over that Qdrant, `infer=False`, FastEmbed `BAAI/bge-small-en-v1.5` |
 | Host | Docker Desktop on a laptop (linux/amd64). Latency is noisy; use p50 |
-| Engine | `deterministic_agent` for every run (no Gemini key was available, so the L5 Gemini run was not made) |
+| Engine | `deterministic_agent` for every run. No Gemini run was made: no API key was available in the build environment |
+
+Exact searches (no vector index) are deterministic; runs with an HNSW index can differ between index builds, because the graph is built with random levels.
 
 ### Default run reproduces 0.1.0 (`eval-default.txt`)
 
-`leak-arena eval` (S1–S6 + Control, `unprotected` + `memshield`, own schema): attack aggregate **97.5% → 0.0%** queries leaking, leaked row share **63.2% → 0.0%**, rank-1 hijack 72.5% → 0.0%, canary exfiltration 87.5% → 0.0%, authorized recall@3 **86.4% (n=22) → 100.0% (n=22)**. Every security and recall cell matches the 0.1.0 table below. Gate: exit 0.
+`leak-arena eval` (S1–S6 + Control, `unprotected` + `memshield`, own schema): attack aggregate **97.5% → 0.0%** queries leaking, leaked row share **63.2% → 0.0%**, rank-1 hijack 72.5% → 0.0%, canary exfiltration 87.5% → 0.0%, authorized recall@3 **86.4% (n=22) → 100.0% (n=22)**. Every security and recall cell matches the 0.1.0 table below. Gate: exit 0. `eval-2000-stress.txt` (`--top-k 10 --seed-size 2000 --repeats 1`) reproduces the 0.1.0 stress aggregates as well: unprotected 100.0% / 72.2% / 72.5% / 90.0% / recall@10 90.9%, memshield 0.0% and 100.0%.
 
 ### All scenarios, five targets (`eval-all-scenarios-5-targets.txt`)
 
@@ -21,37 +25,39 @@ All 0.2.0 numbers come from runs on 2026-11-16 (UTC) against **adk-memshield 0.2
 
 | Target | Queries leaking ≥1 row | Leaked row share | Rank-1 hijack | Canary exfil | Authorized recall@3 (n) | p50 / p95 search |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| unprotected pgvector | 92.9% | 64.0% | 71.4% | 83.9% | 79.3% (29) | 6.94 / 28.65 ms |
-| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (29) | 5.87 / 19.71 ms |
-| adk-memshield, plan pinning off | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (29) | 6.73 / 22.51 ms |
-| Qdrant 1.20 (payload filters) | 94.1% | 62.7% | 70.6% | 82.4% | 88.5% (26) | 5.81 / 25.19 ms |
-| Mem0 OSS 2.2 (user_id + metadata filters) | 97.8% | 62.2% | 75.6% | 86.7% | 86.4% (22) | 36.35 / 149.47 ms |
+| unprotected pgvector | 91.2% | 62.9% | 70.2% | 82.5% | 80.0% (30) | 5.77 / 32.12 ms |
+| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (30) | 7.34 / 22.25 ms |
+| adk-memshield, plan pinning off | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (30) | 7.72 / 24.04 ms |
+| Qdrant 1.20.0 (payload filters) | 92.3% | 61.5% | 69.2% | 80.8% | 88.9% (27) | 7.59 / 32.38 ms |
+| Mem0 OSS 2.2.1 (user_id + metadata filters) | 95.7% | 60.9% | 73.9% | 84.8% | 87.0% (23) | 60.90 / 143.97 ms |
 
-Read this as "what happens when the application passes the wrong filter", the same mistake expressed through each store's own API; Qdrant and Mem0 leak because their isolation is the filter the application passes, which is how they are designed, not a defect. The denominators differ because n/a cells are excluded: Mem0 has no compartments (S7 n/a) and neither Qdrant nor Mem0 has session state (S9 n/a). Mem0's latency includes its own query embedding; the other targets' figures exclude it. With a correct filter (Control) every target returned 0 unauthorized rows and 100% recall; in S6 (authorized same-tier lures) Mem0's own-rows-plus-shared merge reached 66.7% recall against 100% elsewhere.
+Read this as "what happens when the application passes the wrong filter": the same mistake expressed through each store's own API. Qdrant and Mem0 leak because their isolation is the filter the application passes, which is how they are designed, not a defect. The denominators differ because n/a cells are excluded: Mem0 has no compartments (S7 n/a) and neither Qdrant nor Mem0 has session state (S9 n/a). Mem0 requires an entity id on every search, so the arena's Mem0 adapter runs a correct filter as two Mem0 searches (own rows, then shared rows) and merges them; its latency is those two calls, each embedding the query, while the other targets' figures exclude query embedding. With a correct filter (Control) every target returned 0 unauthorized rows and 100% recall; in S6 (authorized same-tier lures) the arena's Mem0 adapter reached 83.3% recall against 100% elsewhere.
 
-### S7–S9 and the posture verdict (`eval-v020-scenarios-5-targets.txt`)
+### S7–S9 and the posture verdict (`eval-v020-scenarios-5-targets.txt`, `eval-v020-scenarios-json.txt`)
+
+memshield runs S7 and S9 with no application `WHERE` clause, so its RLS policy alone decides.
 
 | Scenario | unprotected | memshield 0.2.0 | memshield on superuser DSN | Qdrant | Mem0 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| S7 compartment read-across | 50.0% leaking, recall 100% (n=4) | **0.0%**, recall 100% (n=4) | refused (config) | 50.0%, recall 100% | n/a |
-| S8 forged identity vs verified token | 100.0% leaking | **0.0%**: 5/5 calls refused on identity | refused (config) | 100.0% | 100.0% |
-| S9 pooled session-context bleed | 100.0% leaking, recall **0.0%** (n=3) | **0.0%**, recall 100% (n=3) | refused (config) | n/a | n/a |
+| S7 compartment read-across (6 queries) | 50.0% leaking, recall 100% (n=4) | **0.0%**, recall 100% (n=4) | refused (config) | 50.0%, recall 100% | n/a |
+| S8 forged identity vs verified token (6 queries) | 83.3% leaking | **0.0%**: 5 calls refused on identity; the positive control answered (recall 100%, n=1) | refused (config) | 83.3% | 83.3% |
+| S9 pooled session-context bleed (5 queries) | 100.0% leaking, recall **0.0%** (n=3) | **0.0%**, recall 100% (n=3) | refused (config) | n/a | n/a |
 
-S8's memshield latency (0.10 ms p50) is the refusal, before any SQL; refusals are excluded from aggregate latency. In S9 the baseline's telemetry shows `session_user_setting = bob_cfo` and the swallowed `IdentityRebindError`; memshield's shows that the next checkout after the planted session-level `SET` saw an empty setting (reset on return) and its transaction ran as `alice_analyst`.
+The refusal count and recall come from the JSON report (`identity_refusals`, `authorized_recall_pct`). S8's memshield p50 (0.12 ms) is the refusal, before any SQL; refusals are excluded from aggregate latency. The S9 telemetry (the baseline's `session_user_setting = bob_cfo` and swallowed `IdentityRebindError`; memshield's `same_backend = true` and an empty setting on the next checkout) is per query, so it is not in these reports; `tests/test_v020.py::test_s9_pooled_session_bleed` asserts it on every run. The superuser target is exempt from the gate as a demo; a refused `memshield` target would make the gate exit 2.
 
 ### Scale: 10,000 rows with HNSW (`eval-10k-hnsw-3-targets.txt`)
 
-`leak-arena eval --seed-size 10000 --hnsw --top-k 10 --repeats 1 --targets unprotected,memshield,qdrant` (9,964 synthetic rows per table loaded with chunked COPY + ANALYZE in 5.6 s; HNSW on both tables in 6.3 s). Attack aggregate:
+`leak-arena eval --seed-size 10000 --hnsw --top-k 10 --repeats 1 --targets unprotected,memshield,qdrant` (9,964 synthetic rows per table loaded with chunked COPY + ANALYZE in 6.2 s; HNSW on both tables in 6.2 s). Attack aggregate:
 
 | Target | Queries leaking | Leaked row share | Canary exfil | Authorized recall@10 (n) | p50 / p95 search |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| unprotected pgvector | 100.0% | 80.9% | 70.0% | 68.2% (22) | 11.27 / 35.37 ms |
-| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | 100.0% (22) | 12.95 / 27.76 ms |
-| Qdrant 1.20 | 100.0% | 69.8% | 90.0% | 90.9% (22) | 10.92 / 31.19 ms |
+| unprotected pgvector | 97.5% | 85.4% | 57.5% | 59.1% (22) | 8.53 / 29.65 ms |
+| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | 100.0% (22) | 12.88 / 28.10 ms |
+| Qdrant 1.20.0 | 100.0% | 69.8% | 90.0% | 90.9% (22) | 10.34 / 23.52 ms |
 
-Control (correct filters): 0 unauthorized rows and 100% recall@10 on all three. Gate: exit 0.
+Control (correct filters): 0 unauthorized rows and 100% recall@10 on all three. Gate: exit 0. The first run of this command the same day (before the review fixes, with a different HNSW build) measured unprotected 100.0% / 80.9% / 70.0% / recall 68.2%; memshield and Qdrant were identical.
 
-### Prepared-connection mode, 10k and 100k (`prepared-*.json`, `prepared-*.log`)
+### Prepared-connection mode, 10k and 100k (`prepared-*.json`, `prepared-*.log`, `prepared-*.cmd`)
 
 `leak-arena prepared` repeats one light caller's query 20 times on one pinned connection per target and shape, scores recall@10 against the exact authorized top 10, and records `generic_plans` / `custom_plans` and the `EXPLAIN ANALYZE` plan. Results for 100,000 rows per table:
 
@@ -71,13 +77,19 @@ Control (correct filters): 0 unauthorized rows and 100% recall@10 on all three. 
 | HNSW, `iterative_scan=relaxed_order` | memshield / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 61.90 ms |
 | HNSW, `iterative_scan=relaxed_order` | memshield / rls_only | 1.0 | 0/20 | 0 / 15 | Index Scan using HNSW (412) | 5.26 ms |
 
-At 10,000 rows with HNSW every shape used a bitmap plan with 1.0 recall; `memshield_unpinned` reached 10 generic plans out of 15 prepared executions, memshield 0.2.0 none. 0 unauthorized rows in all 400 prepared-mode searches. Loading 100,000 rows into both tables took 27–32 s; building both HNSW indexes 108–119 s (`max_parallel_maintenance_workers = 0`).
+At 10,000 rows with HNSW every shape used a bitmap plan with 1.0 recall; `memshield_unpinned` recorded 10 generic plans out of 15 prepared executions in both shapes, memshield 0.2.0 none. 0 unauthorized rows in all 400 prepared-mode searches. Loading 100,000 rows into both tables took 27–32 s; building both HNSW indexes 108–119 s (`set_hnsw` builds with `max_parallel_maintenance_workers = 0`).
 
 The finding: with an HNSW index on this data, an index scan followed by a filter starves a light caller completely (40 candidates, 40 filtered), under custom plans, for the unprotected table's correct app filter and for memshield's RLS-only shape. Plan pinning (memshield 0.2.0's fix for the generic-plan collapse) cannot prevent that; pgvector's iterative scan does. memshield's default search shape got an exact plan here. That is a planner choice for this data, not a guarantee.
 
-### Kubernetes manifests (`kubeconform.txt`)
+### Query plans at 2,000 rows (`explain-2000.txt`, `explain-2000-analyze.txt`)
 
-`kustomize build` (v5.8.3) of `deploy/overlays/dev` (11 resources) and `deploy/overlays/production` (5) passes `kubeconform -strict` (v0.8.0) for Kubernetes 1.33.0. Not applied to a live cluster.
+`python benchmarks/explain_plans.py [--analyze]`: the S5 search as `alice_analyst` at 2,000 rows per table. RLS leaves 45 rows to score (1,955 removed by the policy filter on a `Seq Scan` right after the COPY, 5.00 ms; after `ANALYZE`, a bitmap scan on `idx_memories_scope_lookup` narrows to the tenant's 978 rows and the filter removes 933, 1.47 ms). The unprotected S5 search scores all 2,000 rows (4.48 / 4.13 ms).
+
+### Tests, manifests and image
+
+- `pytest.txt`: **64 passed** (45 at the 0.1.0 baseline, `baseline-0.1.0-pytest.txt`).
+- `kubeconform.txt`: `kustomize build` (v5.8.3) of `deploy/overlays/dev` (11 resources) and `deploy/overlays/production` (5) passes `kubeconform -strict` (v0.8.0) for Kubernetes 1.33.0. Not applied to a live cluster.
+- `image-nonroot-smoke.txt`: the image built from this tree runs as uid 10001, runs an eval against unprotected, memshield and Qdrant (gate PASS), and answers `/healthz` and `/readyz`.
 
 ---
 

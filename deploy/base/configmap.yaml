@@ -10,5 +10,3 @@ data:
   # Read-only console: no injection, reset, rescale or benchmark jobs.
   ARENA_PUBLIC_MODE: "1"
   ARENA_TARGET_CONCURRENCY: "4"
-  # Optional targets: point at a Qdrant service to enable the qdrant and mem0 targets.
-  ARENA_QDRANT_URL: http://adk-leak-arena-qdrant:6333

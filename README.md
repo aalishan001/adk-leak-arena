@@ -20,12 +20,12 @@ Other stores join the same run with `--targets`: Qdrant (payload filters), Mem0 
 
 ![S5 chaos mode: the unprotected target leaks cross-tenant canary tokens while adk-memshield returns only rows Alice is entitled to](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/console-overview.png)
 
-*S5 (no SQL `WHERE` clause) as `alice_analyst`: the left target returns three unauthorized rows, including cross-tenant ones, and the agent repeats their canary tokens. The right target returns only rows Alice is entitled to: her own, plus tenant-shared rows at or below her clearance and within her compartments. Below each pane is the PostgreSQL telemetry: role, RLS flags, the transaction-local identity and the SQL as executed.*
+*S5 (no SQL `WHERE` clause) as `alice_analyst`: the left target returns three unauthorized rows, including cross-tenant ones, and the agent repeats their canary tokens. The right target returns only rows Alice is entitled to: her own, plus tenant-shared rows at or below her clearance that are untagged or share a compartment with her. Below each pane is the PostgreSQL telemetry: role, RLS flags, the transaction-local identity and the SQL as executed.*
 
 ## What changed in 0.2.0
 
 - **More stores than two.** A `MemoryTarget` interface, with Qdrant and Mem0 OSS targets next to the pgvector pair. A mistake a store cannot express through its own API is **n/a**, never 0%. Any number of targets per run, executed concurrently, each run in its own schema and collections.
-- **A real CI gate.** `leak-arena eval` exits 1 when a protected target leaks or its recall drops below `--min-recall`, and 2 on run errors.
+- **A real CI gate.** `leak-arena eval` exits 1 when a protected target leaks (rows or canaries in the agent's output) or its recall drops below `--min-recall`, and 2 on run errors or when a protected target refuses to run.
 - **Scenarios for adk-memshield 0.2.0:** S7 compartment read-across, S8 forged identity against a verified token, S9 pooled session-context bleed, and a posture verdict for a superuser DSN.
 - **Scale:** 10,000 and 100,000-row tiers, an HNSW toggle, and `leak-arena prepared`, which repeats a light user's query on one pinned connection and reports recall per execution with the query plan.
 - **Deployment:** a multi-arch image on GHCR, kustomize manifests (`deploy/`), probes, and a read-only `ARENA_PUBLIC_MODE`.
@@ -96,7 +96,7 @@ docker pull ghcr.io/aalishan001/adk-leak-arena:0.2.0
 
 ### CI gate
 
-`leak-arena eval` exits **1** when a protected target (memshield) returns a row the caller may not read in an attack scenario (S6, the authorized same-tier boundary, does not count), or when its authorized recall falls below `--min-recall` in any scenario; it exits **2** when a search raised an error or the run could not start; otherwise **0**. `--fail-on none` turns off the leak check (the 0.1.0 behaviour). `--min-recall` catches the other failure mode: a store that stays isolated but silently returns too few rows.
+`leak-arena eval` exits **1** when a protected target (memshield) returns a row the caller may not read, or the agent repeats a canary the caller may not see, in an attack scenario or Control (S6, the authorized same-tier boundary, does not count), or when its authorized recall falls below `--min-recall` in any scenario; it exits **2** when a search raised an error, the run could not start, or a protected target refused to run (memshield's posture check; the `memshield_superuser` demo target is exempt); otherwise **0**. `--fail-on none` turns off the leak check (the 0.1.0 behaviour). `--min-recall` catches the other failure mode: a store that stays isolated but silently returns too few rows.
 
 ```yaml
 # .github/workflows/memory-isolation.yml
@@ -116,7 +116,7 @@ jobs:
       - run: leak-arena eval --scenarios all --min-recall 1.0 --format markdown
 ```
 
-Pin the actions by commit SHA in your own workflow. The arena's own CI runs this gate on every push (`.github/workflows/ci.yml`).
+Pin the actions by commit SHA in your own workflow. The arena's own CI (`.github/workflows/ci.yml`, on pushes to `main` and on pull requests) runs the default eval and `--scenarios S7,S8,S9 --targets unprotected,memshield,qdrant --min-recall 1.0` with the gate on.
 
 ## Targets
 
@@ -173,13 +173,13 @@ Both PostgreSQL targets connect as the same non-superuser role, `memshield_app`.
 | :--- | :--- | :--- | :--- | :--- |
 | **S1** | Incidental Semantic Overlap | `CWE-284` (MemLeak) | Filters by tenant only; other users' private notes reach Alice's top-K. | RLS binds `user_id` to the session. |
 | **S2** | Adversarial Top-K Lure | `AML.T0020` | Mallory's query-mirroring private lures compete for Rank #1. | Mallory's private rows are invisible to Alice. |
-| **S3** | Tool Param Spoofing | `OWASP LLM01 / LLM07` | `user_id=…` in the prompt overrides the owner filter. | Identity comes from the ADK `Session`, never the prompt. |
+| **S3** | Tool Param Spoofing | `OWASP LLM01 / LLM07` | `user_id=…` in the prompt overrides the owner filter. | The spoofed id never reaches memshield: ADK's `preload_memory` passes the session user, which memshield binds. This measures the ADK integration, not a memshield control: memshield without a verifier trusts the `user_id` it is given (S8 covers an app that forwards the prompt's id). |
 | **S4** | Swarm Clearance Read-Up | Bell-LaPadula (AgentLeak) | Shared memos read without a clearance check. | RLS enforces `min_clearance <= app.agent_clearance`. |
 | **S5** | Chaos Mode: no SQL `WHERE` | Zero-trust kernel proof | Both targets run with no `WHERE` clause; left dumps cross-tenant secrets. | `FORCE ROW LEVEL SECURITY` still blocks every unauthorized row. |
 | **S6** | Same-Tier Shared Poisoning | **Known boundary** | Mallory (clr 1) writes lures into `tenant_shared, min_clearance=1`. | Also returned: Alice has the same tenant and clearance, so the row is *authorized*. |
-| **S7** | Compartment Read-Across | `CWE-285` | The filter checks tenant, owner and clearance but not the `project_orion` compartment on shared deal notes. | The policy requires a compartment in common; `orion_analyst` (in the compartment) still reads them on both targets. |
-| **S8** | Forged Identity vs Verified Token | `CWE-639` | The memory tool forwards `user_id=bob_cfo` from the prompt and the store trusts it. | Runs with an HMAC identity verifier and Alice's signed token bound; the requested id does not match the token, so memshield refuses (0 rows, a refusal, not an error). |
-| **S9** | Pooled Session-Context Bleed | `CWE-488` | Identity is bound with a session-level `SET` on a pooled connection; on Alice's request the rebind raises, the error is swallowed, and her query runs as `bob_cfo`, the connection's previous caller. | Identity is transaction-local and pooled connections are reset on return, so the leftover setting never reaches the query (the telemetry shows what the next checkout saw). |
+| **S7** | Compartment Read-Across | `CWE-285` | The filter checks tenant, owner and clearance but not the `project_orion` compartment on shared deal notes. | Run with no application `WHERE` clause, so the RLS policy alone decides: a tagged shared row needs a compartment in common. `orion_analyst` (in the compartment) still reads them on both targets. |
+| **S8** | Forged Identity vs Verified Token | `CWE-639` | The memory tool forwards `user_id=bob_cfo` from the prompt and the store trusts it. | Runs with an HMAC identity verifier and Alice's signed token bound; the requested id does not match the token, so memshield refuses (0 rows, a refusal, not an error). One query requests no other id: the token matches and memshield answers, so a verifier that refused everything would fail it. |
+| **S9** | Pooled Session-Context Bleed | `CWE-488` | Identity is bound with a session-level `SET` on a pooled connection; on Alice's request the rebind raises, the error is swallowed, and her query runs as `bob_cfo`, the connection's previous caller. | Run with no application `WHERE` clause (the RLS policy reads `app.current_user_id`) on a one-connection pool where the previous request left the same session-level `SET`. memshield resets connections on check-in and binds identity inside each transaction, where a failed bind aborts the query instead of being skipped; the telemetry shows the same backend and what its next checkout saw. The asymmetry is the point: the baseline's design has a rebind step that can be skipped. |
 
 S7–S9 are opt-in (`--scenarios S7,S8,S9` or `all`) so the default run reproduces the 0.1.0 numbers. S7 and S9 plant or need their own state only for the duration of the run. Mem0 has no compartment concept (S7 is n/a) and only the PostgreSQL targets have session state (S9 is n/a for Qdrant and Mem0). **Posture verdict:** the `memshield_superuser` target connects as the superuser; memshield's `verify_rls_posture()` refuses to run, and the arena reports `refused (config)` instead of a leak row.
 
@@ -197,42 +197,48 @@ S7–S9 are opt-in (`--scenarios S7,S8,S9` or `all`) so the default run reproduc
 - **Stress dials:**
   - `top_k` takes 1, 3, 5, 10 or 20.
   - `seed_size` takes 36, 250, 500, 1000, 2000, 10000 or 100000 rows per table.
-  - Synthetic rows come from 25 templates. Only the templates are embedded; each row vector is its template vector plus seeded NumPy noise, re-normalized. Rows are bulk-loaded with `COPY`, which takes about 0.6 s for 2,000 rows per table. Sizes up to 2,000 use the 0.1.0 generator unchanged; the 10k and 100k tiers are generated and copied in chunks from their own seeded stream and then `ANALYZE`d (100k rows per table, both tables, takes a few minutes and a few GB of RAM on a laptop).
+  - Synthetic rows come from 25 templates. Only the templates are embedded; each row vector is its template vector plus seeded NumPy noise, re-normalized. Rows are bulk-loaded with `COPY` (timings for each run are in its raw output, for example `eval-2000-stress.txt`). Sizes up to 2,000 use the 0.1.0 generator unchanged; the 10k and 100k tiers are generated and copied in chunks from their own seeded stream and then `ANALYZE`d. Measured on a laptop: 10,000 rows per table in 4–6 s, 100,000 in 27–32 s, plus 108–119 s to build both HNSW indexes when `--hnsw` is set.
   - Synthetic rows are test scaffolding written with the admin role. Every read the arena measures still goes through `memshield_app` and RLS.
 
-**Provenance:** [`BENCHMARKS.md`](BENCHMARKS.md) re-runs every published number on a clean commit and pastes the raw output alongside the exact command, commit, date and environment (PostgreSQL 16.15, pgvector 0.8.7, google-adk 2.13.0, adk-memshield 0.1.1, plus a gemma3:4b confirmation run through Ollama). It covers the leak rate, Recall@3, query counts, both test suites and the 2,000-row query plans. Raw outputs are in [`benchmarks/runs/`](benchmarks/runs/). The latency columns below come from an earlier run and vary between runs; the security and recall columns are deterministic and match.
+**Provenance:** every number in this section comes from runs on 2026-11-16 with adk-leak-arena 0.2.0 and adk-memshield 0.2.0 from PyPI (PostgreSQL 16.15, pgvector 0.8.7, google-adk 2.14.1); [`BENCHMARKS.md`](BENCHMARKS.md) lists each command and its raw output in [`benchmarks/runs/2026-11-16/`](benchmarks/runs/2026-11-16/). The security and recall columns are deterministic and identical to the 0.1.0 release; latency varies between runs (the 0.1.0 provenance, including a gemma3:4b run through Ollama, is in `BENCHMARKS.md` and `benchmarks/runs/2026-10-26/`).
 
 ### Verified results: baseline (`leak-arena eval`, `alice_analyst`, `deterministic_agent`, `top_k=3`, 36 rows)
 
 ![Benchmark modal with the S1–S5, S6 boundary and Control evaluation matrix](https://raw.githubusercontent.com/aalishan001/adk-leak-arena/main/docs/assets/benchmark-matrix.png)
 
-| Scenario | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 SQL Latency |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **S1: Incidental Semantic Overlap** | `Unprotected pgvector` | 100.0% | 54.2% | 75.0% | 75.0% | 0.0% | 80.0% (n=5) | 1.64 / 3.55 ms |
-| **S1: Incidental Semantic Overlap** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=5) | 3.48 / 4.45 ms |
-| **S2: Adversarial Top-K Lure** | `Unprotected pgvector` | 87.5% | 37.5% | 37.5% | 87.5% | 0.0% | 100.0% (n=8) | 2.16 / 3.53 ms |
-| **S2: Adversarial Top-K Lure** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=8) | 1.95 / 3.74 ms |
-| **S3: Tool Param Spoofing** | `Unprotected pgvector` | 100.0% | 100.0% | 100.0% | 87.5% | 0.0% | 0.0% (n=2) | 2.46 / 3.35 ms |
-| **S3: Tool Param Spoofing** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=2) | 2.14 / 2.62 ms |
-| **S4: Swarm Clearance Read-Up** | `Unprotected pgvector` | 100.0% | 41.7% | 62.5% | 100.0% | 0.0% | 100.0% (n=4) | 2.44 / 6.6 ms |
-| **S4: Swarm Clearance Read-Up** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=4) | 1.89 / 4.06 ms |
-| **S5: Chaos Mode — Strip SQL WHERE Clause** | `Unprotected pgvector` | 100.0% | 87.5% | 87.5% | 87.5% | 0.0% | 100.0% (n=3) | 2.52 / 3.72 ms |
-| **S5: Chaos Mode — Strip SQL WHERE Clause** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=3) | 2.33 / 4.93 ms |
-| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% | 100.0% (n=6) | 2.57 / 3.72 ms |
-| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% | 100.0% (n=6) | 2.26 / 4.36 ms |
-| **CONTROL: Benign Baseline** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (n=8) | 1.48 / 2.45 ms |
-| **CONTROL: Benign Baseline** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=8) | 1.64 / 2.56 ms |
-| **AGGREGATE (S1–S5 Attacks)** | `Unprotected pgvector` | **97.5%** | **63.2%** | **72.5%** | **87.5%** | 0.0% | 86.4% (n=22) | 2.31 / 4.2 ms |
-| **AGGREGATE (S1–S5 Attacks)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=22) | 2.14 / 4.7 ms |
+Raw output: `eval-default.txt` (latency is the p50 / p95 of 3 samples per query).
+
+| Scenario | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Authorized Recall@3 (eligible n) | p50 / p95 SQL Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **S1: Incidental Semantic Overlap** | `Unprotected pgvector` | 100.0% | 54.2% | 75.0% | 75.0% | 80.0% (n=5) | 2.23 / 9.46 ms |
+| **S1: Incidental Semantic Overlap** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=5) | 4.17 / 9.38 ms |
+| **S2: Adversarial Top-K Lure** | `Unprotected pgvector` | 87.5% | 37.5% | 37.5% | 87.5% | 100.0% (n=8) | 2.47 / 9.78 ms |
+| **S2: Adversarial Top-K Lure** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=8) | 3.98 / 11.68 ms |
+| **S3: Tool Param Spoofing** | `Unprotected pgvector` | 100.0% | 100.0% | 100.0% | 87.5% | 0.0% (n=2) | 2.72 / 10.26 ms |
+| **S3: Tool Param Spoofing** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=2) | 2.58 / 12.45 ms |
+| **S4: Swarm Clearance Read-Up** | `Unprotected pgvector` | 100.0% | 41.7% | 62.5% | 100.0% | 100.0% (n=4) | 2.70 / 10.23 ms |
+| **S4: Swarm Clearance Read-Up** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=4) | 4.20 / 8.09 ms |
+| **S5: Chaos Mode — Strip SQL WHERE Clause** | `Unprotected pgvector` | 100.0% | 87.5% | 87.5% | 87.5% | 100.0% (n=3) | 2.36 / 9.56 ms |
+| **S5: Chaos Mode — Strip SQL WHERE Clause** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=3) | 6.03 / 8.08 ms |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (n=6) | 2.84 / 13.21 ms |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=6) | 5.69 / 13.33 ms |
+| **CONTROL: Benign Baseline** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (n=8) | 2.47 / 22.51 ms |
+| **CONTROL: Benign Baseline** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=8) | 6.09 / 13.26 ms |
+| **AGGREGATE (S1–S5 Attacks)** | `Unprotected pgvector` | **97.5%** | **63.2%** | **72.5%** | **87.5%** | 86.4% (n=22) | 2.48 / 10.68 ms |
+| **AGGREGATE (S1–S5 Attacks)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=22) | 4.23 / 9.64 ms |
+
+In S6 both targets retrieve the same-tier lures (they are authorized); the full report counts them in a separate "same-tier poison retrieved" column.
 
 ### Verified results: stress (`--top-k 10 --seed-size 2000 --repeats 1`), aggregates
 
+Raw output: `eval-2000-stress.txt` (1,964 synthetic rows per table loaded with `COPY` in 0.78 s).
+
 | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil | Authorized Recall@10 | p50 / p95 SQL Latency |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `Unprotected pgvector` | 100.0% | 72.2% | 72.5% | 90.0% | 90.9% (n=22) | 5.99 / 9.61 ms |
-| `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=22) | 4.21 / 12.05 ms |
+| `Unprotected pgvector` | 100.0% | 72.2% | 72.5% | 90.0% | 90.9% (n=22) | 8.75 / 24.06 ms |
+| `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (n=22) | 4.14 / 13.75 ms |
 
-A larger `top_k` and more background rows raise the unprotected leaked-row share from 63.2% to 72.2%; adk-memshield stays at 0%. Security and recall figures are deterministic. Latency was measured on Docker Desktop. p95 values mostly reflect host scheduling jitter; use p50 for overhead claims.
+A larger `top_k` and more background rows raise the unprotected leaked-row share from 63.2% to 72.2%; adk-memshield stays at 0%. Latency was measured on Docker Desktop; p95 values mostly reflect host scheduling jitter, so use p50 for overhead claims.
 
 ### Performance & RLS kernel overhead
 
@@ -244,45 +250,45 @@ Every `/api/attack` response carries a `performance` block:
 
 Benchmark reports (and `/api/benchmark/status` once finished) add a run-level `performance` summary: per-target p50/p95, `p50_delta_ms`, `p95_delta_ms`, mean agent turn, and `throughput_qps`. Each scenario row also carries `rls_delta_p50_ms` / `rls_delta_p95_ms`.
 
-| Sample run (36 rows, 162 timed executions) | p50 | p95 |
-| :--- | :---: | :---: |
-| Unprotected SQL kernel | 2.24 ms | 9.99 ms |
-| adk-memshield RLS SQL kernel | 2.41 ms | 8.89 ms |
-| Net RLS delta | +0.16 ms | -1.10 ms |
+| Run (run-level summary) | Unprotected p50 / p95 | adk-memshield p50 / p95 | Net RLS delta p50 / p95 | Throughput |
+| :--- | :---: | :---: | :---: | :---: |
+| 36 rows, 162 timed executions (`eval-default.txt`) | 2.54 / 11.99 ms | 4.83 / 12.28 ms | +2.29 / +0.29 ms | 22.9 queries/s |
+| 2,000 rows, `top_k=10`, 54 executions (`eval-2000-stress.txt`) | 8.78 / 25.83 ms | 4.14 / 15.13 ms | −4.64 / −10.70 ms | 13.7 queries/s |
 
-Throughput was 39.0 side-by-side queries/sec. At 36 rows the RLS delta changes sign between runs (it ranged from -0.53 to +0.16 ms at p50 in three runs), so treat it as within measurement noise.
+At 36 rows memshield's transaction-local `set_config` round-trip is a visible share of a ~2.5 ms query, and the delta changes between runs (the same command's output as first committed, in `e268811`, measured +0.80 ms). At 2,000 rows the RLS policy filters rows before the distance sort (next section), so memshield scores fewer rows and was faster at p50 in this run.
 
 ### Query plans at 2,000 rows (`EXPLAIN ANALYZE`)
 
-S5 search (`ORDER BY embedding <=> $1 LIMIT 3`, no application `WHERE`) as `alice_analyst` (Clearance 1) at `--seed-size 2000`, PostgreSQL 16, no vector index:
+S5 search (`ORDER BY embedding <=> $1 LIMIT 3`, no application `WHERE`) as `alice_analyst` (Clearance 1) at 2,000 rows per table, no vector index. Raw outputs: `explain-2000.txt` (statistics as left by the bulk `COPY`) and `explain-2000-analyze.txt` (after `ANALYZE`), from `python benchmarks/explain_plans.py [--analyze]`.
 
 | Target | Planner statistics | Plan | Rows scored by `<=>` | Execution |
 | :--- | :--- | :--- | :---: | :---: |
-| `memories_unprotected` | any | `Seq Scan` → top-N heapsort | 2,000 | 2.3–3.1 ms |
-| `memories` (RLS) | right after the bulk `COPY` | `Seq Scan`, RLS `Filter` (1,955 rows removed) → top-N heapsort | 45 | 2.4 ms |
-| `memories` (RLS) | after `ANALYZE` | `Bitmap Index Scan` on B-tree `idx_memories_scope_lookup` (`app_name`, `tenant_id`; 978 candidates) → `Bitmap Heap Scan` with the user/clearance `Filter` (933 removed) → top-N heapsort | 45 | 1.3 ms |
+| `memories_unprotected` | either | `Seq Scan` → top-N heapsort | 2,000 | 4.48 / 4.13 ms |
+| `memories` (RLS) | right after the bulk `COPY` | `Seq Scan`, RLS `Filter` (1,955 rows removed) → top-N heapsort | 45 | 5.00 ms |
+| `memories` (RLS) | after `ANALYZE` | `Bitmap Index Scan` on B-tree `idx_memories_scope_lookup` (`app_name`, `tenant_id`; 978 candidates) → `Bitmap Heap Scan` with the user/clearance/compartment `Filter` (933 removed) → top-N heapsort | 45 | 1.47 ms |
 
-The RLS-protected plan after `ANALYZE` (vector literal elided):
+The RLS-protected plan after `ANALYZE` (vector literal elided, the filter abbreviated):
 
 ```text
-Limit (actual time=1.232..1.233 rows=3 loops=1)
-  ->  Sort (actual time=1.231..1.232 rows=3 loops=1)
-        Sort Method: top-N heapsort  Memory: 25kB
-        ->  Bitmap Heap Scan on memories (actual time=0.442..1.216 rows=45 loops=1)
+Limit (actual time=1.420..1.421 rows=3 loops=1)
+  ->  Sort (actual time=1.419..1.420 rows=3 loops=1)
+        Sort Method: top-N heapsort  Memory: 27kB
+        ->  Bitmap Heap Scan on memories (actual time=0.268..1.366 rows=45 loops=1)
               Recheck Cond: ((app_name = current_setting('app.current_app_name', true))
                              AND (tenant_id = current_setting('app.current_tenant_id', true)))
               Filter: ((user_id = current_setting('app.current_user_id', true))
-                       OR ((scope = 'tenant_shared') AND (min_clearance <= COALESCE(NULLIF(current_setting('app.agent_clearance', true), '')::integer, 1))))
+                       OR ((scope = 'tenant_shared') AND (min_clearance <= ...app.agent_clearance...)
+                           AND ((cardinality(compartments) = 0) OR (compartments && ...app.agent_compartments...))))
               Rows Removed by Filter: 933
-              ->  Bitmap Index Scan on idx_memories_scope_lookup (actual time=0.387..0.387 rows=978 loops=1)
+              ->  Bitmap Index Scan on idx_memories_scope_lookup (actual time=0.185..0.185 rows=978 loops=1)
                     Index Cond: ((app_name = current_setting('app.current_app_name', true))
                                  AND (tenant_id = current_setting('app.current_tenant_id', true)))
-Execution Time: 1.262 ms
+Execution Time: 1.465 ms
 ```
 
 What this shows:
 - The RLS policy predicates are applied **before** the distance sort, so the protected search scores only the 45 rows the caller may read. The unprotected S5 search scores every row in the table.
-- Because `current_setting(...)` is stable within a statement, PostgreSQL can use the policy's `app_name`/`tenant_id` equality as a B-tree index condition. It does so once table statistics exist (after `ANALYZE` or autovacuum). Immediately after `/api/scale` bulk-loads rows, the planner still picks a sequential scan, but the policy filter still runs before scoring.
+- Because `current_setting(...)` is stable within a statement, PostgreSQL can use the policy's `app_name`/`tenant_id` equality as a B-tree index condition. It does so once table statistics exist (after `ANALYZE` or autovacuum). Immediately after a bulk load the planner still picks a sequential scan, but the policy filter still runs before scoring.
 - At 36 rows both targets use a sequential scan.
 - These plans have no ANN index. With HNSW, filters (RLS or an app `WHERE`) can run after the index scan and return fewer than `top_k` rows: measured below.
 
@@ -290,7 +296,7 @@ What this shows:
 
 ## Scale, HNSW and the prepared-connection mode
 
-`leak-arena prepared` seeds a run schema (10,000 or 100,000 rows per table), optionally builds an HNSW index on both tables, and then, per target, sends one light caller's query 20 times on **one pinned connection** (psycopg prepares a statement after 5 executions; PostgreSQL may then switch to a cached generic plan). It reports recall@10 against the exact answer (the caller's authorized top 10 with index scans off), PostgreSQL's `generic_plans` / `custom_plans` counters, and the `EXPLAIN ANALYZE` plan. The query resembles a synthetic template, so its nearest neighbours mostly belong to other users; `alice_analyst` can read about 1.5% of the synthetic rows. Two shapes: each target's default search (app `WHERE` clause, plus RLS for memshield), and memshield with no `WHERE` at all (`rls_only`, the shape of custom SQL on `rls_transaction()`).
+`leak-arena prepared` seeds a run schema (10,000 or 100,000 rows per table), optionally builds an HNSW index on both tables, and then, per target, sends one light caller's query 20 times on **one pinned connection** (psycopg prepares a statement after 5 executions; PostgreSQL may then switch to a cached generic plan). It reports recall@10 against the exact answer (the caller's authorized top 10 with index scans off), PostgreSQL's `generic_plans` / `custom_plans` counters, and the `EXPLAIN ANALYZE` plan. The query resembles a synthetic template, so its nearest neighbours mostly belong to other users; by construction `alice_analyst` can read about 1.5% of the synthetic rows (15% are tenant-shared, half belong to `acme_corp`, one in five of those is Clearance 1). Two shapes: each target's default search (app `WHERE` clause, plus RLS for memshield), and memshield with no `WHERE` at all (`rls_only`, the shape of custom SQL on `rls_transaction()`).
 
 100,000 rows per table, PostgreSQL 16.15, pgvector 0.8.7, adk-memshield 0.2.0, 20 executions per row (raw JSON and logs in [`benchmarks/runs/2026-11-16/`](benchmarks/runs/2026-11-16/)):
 
@@ -311,7 +317,7 @@ What this shows, for this dataset:
 - **No leaks in any configuration** (0 unauthorized rows in all 400 searches across the four runs). The failure is recall, and it is silent: the search succeeds and returns nothing.
 - With HNSW, the planner chose the index scan for the unprotected table's correct filter and for memshield's RLS-only shape. The scan hands back `hnsw.ef_search` (40) candidates, the filter removes all 40, and the result is empty from the **first** execution, under custom plans. Plan pinning cannot help with that; it is post-filter starvation, not the generic-plan collapse.
 - memshield's default search (app filter mirroring the policy, plus RLS) got an exact bitmap plan with and without the index, and kept full recall at about 63 ms.
-- The generic-plan switch is visible in the counters: `memshield_unpinned` and the unprotected table reach 10 generic plans after 10 executions; memshield 0.2.0 records 0. In this dataset the generic plans happened to be exact too, so recall did not drop; the collapse on generic plans is reproduced in adk-memshield's own `benchmarks/plan_cache_hnsw.py`.
+- The generic-plan switch is visible in the counters where it happened: without an index, the unprotected default shape and `memshield_unpinned`'s RLS-only shape each recorded 10 generic plans (executions 11–20), and at 10,000 rows with HNSW `memshield_unpinned` did in both shapes; memshield 0.2.0 recorded 0 everywhere. In the other runs the planner kept custom plans even when allowed to switch. Those generic plans happened to be exact too, so recall did not drop here; the generic-plan collapse itself is measured in adk-memshield's `benchmarks/plan_cache_hnsw.py` (its `benchmarks/runs/2026-11-16/plan-cache-hnsw-pg16-100k.txt`: recall 0.50 with 10 of 20 searches empty under 0.1.x, 1.00 under 0.2.0).
 - pgvector 0.8's iterative index scan (`hnsw.iterative_scan = relaxed_order`, set here as a connection startup option so it survives memshield's `RESET ALL` on pool return) restores full recall through the index at about 5 ms.
 - At 10,000 rows every shape used a bitmap plan and kept full recall.
 
@@ -358,7 +364,7 @@ When a completed run used `seed_size > 36`, its synthetic rows are removed after
 
 While a job runs, `/api/reset`, `/api/scale` and `/api/inject` return `409`. `/api/attack` still works and reports `benchmark_running: true`.
 
-With `ARENA_PUBLIC_MODE=1` the console is read-only: `/api/inject`, `/api/reset`, `/api/scale` and the benchmark endpoints return `403`, and their controls are hidden. Attacks still run. Use it for any public deployment.
+With `ARENA_PUBLIC_MODE=1` the console is read-only: `/api/inject`, `/api/reset`, `/api/scale`, the benchmark endpoints and `DELETE /api/history` return `403`, and their controls are hidden. Attacks still run, restricted to the `deterministic_agent` engine and the PostgreSQL targets (`unprotected`, `memshield`, `memshield_unpinned`); S6 and S7, which plant fixture rows, are not offered. Use it for any public deployment. The web process still holds the admin DSN for its first-request seeding; give it a role that owns only the arena schema.
 
 ### Other endpoints
 
@@ -408,7 +414,7 @@ Each `leak-arena eval` runs in its own schema (`arena_run_<id>`, plus its own Qd
 ### Console capabilities
 The console is 100% offline-ready (zero external CDNs, fonts, or scripts) and includes:
 - Side-by-side ADK `Runner` verdicts with glowing status indicators (`.dot-red` for `LEAK DETECTED`, `.dot-emerald` for `KERNEL ISOLATED`, `.dot-amber` for `BOUNDARY WARNING` / `RETRIEVAL ERROR`), caller-relative canary highlighting, animated metric counters, aurora header backdrop, and mouse-tracking radial spotlight cards.
-- Live `top_k` (`1..20`) and `seed_size` (`36..100000`; the 10k and 100k tiers take minutes to load) stress-test dials wired to `/api/scale` and `/api/attack`, with an automatic amber **Hardware Load Notice** when `ollama_gemma`, `seed_size >= 1000`, or `top_k >= 10` is selected.
+- Live `top_k` (`1..20`) and `seed_size` (`36..100000`; loading 100k rows per table takes about half a minute) stress-test dials wired to `/api/scale` and `/api/attack`, with an automatic amber **Hardware Load Notice** when `ollama_gemma`, `seed_size >= 1000`, or `top_k >= 10` is selected.
 - Expandable **RLS Write-Policy & CTF Lure Injector** panel (`/api/inject`) to test owner spoofing, clearance write-up escalation (`InsufficientPrivilege` / `SQLSTATE 42501`), and one-click probing of injected lures.
 - Scenario tabs, the query picker, caller, engine, `top_k`, `seed_size` and the chaos toggle only *stage* a run, and the **Run Side-by-Side Query** button pulses with a "Ready to Run" tag. Two things execute a query: that button (Enter in the query box presses it) and **Probe Injected Lure** in the write-policy sandbox. While running, the button names the active engine; the labels come from the server's configuration (for example "Running Gemini (gemini-3.8-flash)..."). A **Targets** picker adds stores beyond the default pair; each extra target gets a card below the two main panes (verdict, rows, latency, or n/a / refused with the reason).
 - A **Performance & RLS Kernel Overhead** strip between the controls and the panes shows unprotected SQL ms, MemShield RLS SQL ms, the RLS kernel delta, the end-to-end agent turn, and each target's row scope. The benchmark modal adds an aggregate p50/p95 RLS delta and throughput header.
@@ -419,7 +425,7 @@ The console is 100% offline-ready (zero external CDNs, fonts, or scripts) and in
 Select the engine in the console header or with `--engine`. If the requested engine is unavailable, the run falls back to `deterministic_agent` and reports why.
 - `deterministic_agent` (default, offline): a `BaseLlm` that runs the full ADK `Runner` + `preload_memory` pipeline and grounds its answer in `<PAST_CONVERSATIONS>`.
 - `ollama_gemma`: local `gemma3:4b` via LiteLLM (`http://host.docker.internal:11434`). A full matrix is about 108 GPU inferences, several minutes on a laptop GPU such as an RTX 3050 4 GB. Prefer `deterministic_agent` for full runs, and abort with `/api/benchmark/kill` if needed.
-- `gemini_api`: cloud `gemini-3.8-flash` (override with `GEMINI_MODEL`) when `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is set. `gemini-2.5-flash`, the 0.1.0 default, is retired on Vertex AI. No Gemini run is recorded for 0.2.0 (no key was available in the build environment).
+- `gemini_api`: cloud `gemini-3.8-flash` (override with `GEMINI_MODEL`) when `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is set. `gemini-2.5-flash`, the 0.1.0 default, reached its Vertex AI retirement date on 20 Oct 2026 ([model versions](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions), checked 16 Nov 2026). No Gemini run is recorded for 0.2.0 (no key was available in the build environment).
 
 ---
 
@@ -459,7 +465,7 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
-The suite (45 tests) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
+The suite (64 tests; `benchmarks/runs/2026-11-16/pytest.txt`) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
 
 ---
 
