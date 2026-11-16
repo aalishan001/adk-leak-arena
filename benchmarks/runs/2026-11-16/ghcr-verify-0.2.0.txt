@@ -1,0 +1,16 @@
+# docker buildx imagetools inspect ghcr.io/aalishan001/adk-leak-arena:0.2.0 (anonymous)
+Digest:    sha256:d971833a8f29b40922dd0f6a263969a56fe59f4e1c03e4dcede431bfc22dda1a
+  Platform:  linux/amd64
+  Platform:  linux/arm64
+# docker run --pull always ghcr.io/aalishan001/adk-leak-arena:0.2.0 (linux/amd64): id; pip show; leak-arena eval --scenarios S1,S5,S8,S9,CONTROL --targets unprotected,memshield,qdrant; serve + /healthz /readyz
+Digest: sha256:d971833a8f29b40922dd0f6a263969a56fe59f4e1c03e4dcede431bfc22dda1a
+uid=10001(arena) gid=10001(arena) groups=10001(arena)
+Name: adk-leak-arena
+Version: 0.2.0
+Name: adk-memshield
+Version: 0.2.0
+│ Attack Aggregate      │ Unprotected pgvector   │   96.3% │     75.0% │       81.5% │       81.5% │   66.7% n=12 │    4.76/33.18 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │  100.0% n=12 │    2.97/14.39 │     -1.79 │
+│ Attack Aggregate      │ Qdrant (payload filte~ │   95.5% │     72.7% │       81.8% │       77.3% │    88.9% n=9 │    5.46/21.41 │           │
+CI gate (--fail-on leak): PASS (exit 0)
+b'{"status":"ok"}' b'{"status":"ready","public_mode":false}'
