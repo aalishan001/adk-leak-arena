@@ -42,6 +42,7 @@ jobs:
       OLLAMA_BASE_URL: http://127.0.0.1:9
       FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
       ARENA_QDRANT_URL: http://localhost:56333
+      ARENA_REQUIRE_QDRANT: "1"
       MEM0_TELEMETRY: "False"
 
     steps:
@@ -63,6 +64,14 @@ jobs:
 
       - name: Apply arena schema
         run: psql "$ARENA_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/init_arena.sql
+
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:56333/readyz && exit 0
+            sleep 2
+          done
+          echo "Qdrant did not become ready" && exit 1
 
       - name: Test suite
         run: pytest -v
