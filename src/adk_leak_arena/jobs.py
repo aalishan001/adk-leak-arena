@@ -196,7 +196,8 @@ class BenchmarkJobManager:
                 job.log("pre-run cleanup: TRUNCATE + reseed 36-row baseline (clears CTF injections)")
                 seeded = await asyncio.to_thread(ensure_schema_and_seed, cfg)
                 job.log(f"pre-run cleanup: baseline seeded in {seeded['elapsed_ms']} ms")
-            if p.seed_size > BASELINE_SEED_SIZE:
+            if p.seed_size > BASELINE_SEED_SIZE and tuple(p.targets) == DEFAULT_TARGETS:
+                # Other target sets scale inside their own namespace below.
                 job.phase = "pre_cleanup"
                 info = await asyncio.to_thread(apply_seed_size, cfg, p.seed_size)
                 job.log(

@@ -91,23 +91,44 @@ _SYNTH_TENANTS: tuple[tuple[str, str, float], ...] = (
 _USERS_PER_TENANT = 40
 
 _STATE_LOCK = threading.Lock()
-_CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
+# Rows per table, per run namespace ("" = the shared console tables).
+_SEED_SIZES: dict[str, int] = {}
 _FIXTURE_LOCK = threading.Lock()
 _FIXTURE_REFS: dict[tuple[str, str], int] = {}  # per (database DSN, scenario)
+_EXTERNAL_REFS: dict[tuple[int, str], int] = {}  # per (external target, scenario)
 
 
-def current_seed_size() -> int:
+def _ns(config: ArenaConfig | None) -> str:
+    return config.schema if config is not None else ""
+
+
+def current_seed_size(config: ArenaConfig | None = None) -> int:
+    """Rows per table in ``config``'s namespace (the shared tables when omitted)."""
     with _STATE_LOCK:
-        return _CURRENT_SEED_SIZE
+        return _SEED_SIZES.get(_ns(config), BASELINE_SEED_SIZE)
 
 
-def mark_baseline_reseeded() -> None:
-    """Called after a full reseed (TRUNCATE + 36 rows): no synthetic or fixture rows remain."""
-    global _CURRENT_SEED_SIZE
+def _set_seed_size(config: ArenaConfig, size: int) -> None:
     with _STATE_LOCK:
-        _CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
+        _SEED_SIZES[_ns(config)] = size
+
+
+def mark_baseline_reseeded(config: ArenaConfig | None = None) -> None:
+    """Called after a full reseed (TRUNCATE + 36 rows) of one namespace: no synthetic or
+    fixture rows remain there. Other namespaces' state is untouched."""
+    with _STATE_LOCK:
+        _SEED_SIZES.pop(_ns(config), None)
     with _FIXTURE_LOCK:
-        _FIXTURE_REFS.clear()
+        if config is None:
+            _FIXTURE_REFS.clear()
+        else:
+            for key in [k for k in _FIXTURE_REFS if k[0] == config.db_dsn]:
+                del _FIXTURE_REFS[key]
+
+
+def forget_namespace(config: ArenaConfig) -> None:
+    """Drop a finished run namespace's state."""
+    mark_baseline_reseeded(config)
 
 
 def _render(template: str, rng: np.random.Generator, i: int) -> str:
@@ -333,10 +354,8 @@ def _delete_tagged(config: ArenaConfig, json_key: str, value: str) -> int:
 
 def delete_synthetic(config: ArenaConfig) -> int:
     """Strip every synthetic stress row; the table returns to the 36-row baseline (+ any CTF rows)."""
-    global _CURRENT_SEED_SIZE
     deleted = _delete_tagged(config, "synthetic", "true")
-    with _STATE_LOCK:
-        _CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
+    _set_seed_size(config, BASELINE_SEED_SIZE)
     return deleted
 
 
@@ -346,7 +365,6 @@ def apply_seed_size(config: ArenaConfig, seed_size: int, targets: Any = None) ->
     ``targets`` (a TargetSet) also scales its non-SQL targets; a target that cannot take
     synthetic rows (Mem0) raises ``ValueError`` before anything is loaded.
     """
-    global _CURRENT_SEED_SIZE
     if seed_size not in SEED_SIZE_OPTIONS:
         raise ValueError(f"seed_size must be one of {SEED_SIZE_OPTIONS}")
     external = targets.external() if targets is not None else []
@@ -380,8 +398,7 @@ def apply_seed_size(config: ArenaConfig, seed_size: int, targets: Any = None) ->
             for target in external:
                 target.seed_vectors([(_synthetic_payload(r), _vector_of(r)) for r in rows])
     load_ms = (time.perf_counter() - t_load) * 1000.0
-    with _STATE_LOCK:
-        _CURRENT_SEED_SIZE = seed_size
+    _set_seed_size(config, seed_size)
     return {
         "seed_size": seed_size,
         "synthetic_rows_per_table": count,
@@ -452,15 +469,26 @@ def _acquire(config: ArenaConfig, tag: str, external: list[Any]) -> None:
             _delete_tagged(config, "fixture", tag)
             _plant_records(config, records, tag)
         _FIXTURE_REFS[key] = refs + 1
-    # Non-SQL targets get the same rows through their own write path.
+    # Non-SQL targets get the same rows through their own write path, planted by the first
+    # holder and removed by the last (runs may nest or overlap on one cached target).
     for target in external:
-        target.delete_tagged("fixture", tag)
-        target.seed(records, extra={"fixture": tag})
+        with _FIXTURE_LOCK:
+            key = (id(target), tag)
+            refs = _EXTERNAL_REFS.get(key, 0)
+            _EXTERNAL_REFS[key] = refs + 1
+            if refs == 0:
+                target.delete_tagged("fixture", tag)
+                target.seed(records, extra={"fixture": tag})
 
 
 def _release(config: ArenaConfig, tag: str, external: list[Any]) -> None:
     for target in external:
-        target.delete_tagged("fixture", tag)
+        with _FIXTURE_LOCK:
+            key = (id(target), tag)
+            refs = max(0, _EXTERNAL_REFS.get(key, 0) - 1)
+            _EXTERNAL_REFS[key] = refs
+            if refs == 0:
+                target.delete_tagged("fixture", tag)
     with _FIXTURE_LOCK:
         key = (config.db_dsn, tag)
         refs = max(0, _FIXTURE_REFS.get(key, 0) - 1)

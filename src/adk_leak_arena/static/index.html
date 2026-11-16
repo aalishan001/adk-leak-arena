@@ -737,7 +737,8 @@
       actorSel.innerHTML = injectors.map((p) => `<option value="${esc(p.user_id)}">${esc(p.display_name)}</option>`).join("");
       if (injectors.some((p) => p.user_id === "mallory_contractor")) actorSel.value = "mallory_contractor";
       if (arena.current_seed_size) $("seedSizeSelect").value = String(arena.current_seed_size);
-      $("presetTabs").innerHTML = arena.presets.map((p) =>
+      const blocked = new Set(arena.public_mode ? ((arena.public_restrictions || {}).blocked_presets || []) : []);
+      $("presetTabs").innerHTML = arena.presets.filter((p) => !blocked.has(p.id)).map((p) =>
         `<button type="button" class="tab" role="tab" data-preset="${esc(p.id)}" title="${esc(p.title)}">${esc(p.short_label)}</button>`
       ).join("");
       updateHardwareNotice();
@@ -787,6 +788,12 @@
         const el = $(id);
         if (el) el.hidden = true;
       }
+      const allowed = new Set((arena.public_restrictions || {}).engines || ["deterministic_agent"]);
+      const engine = $("engineSelect");
+      if (engine) {
+        Array.from(engine.options).forEach((o) => { o.disabled = !allowed.has(o.value); });
+        engine.value = "deterministic_agent";
+      }
     }
 
     function selectedTargets() {
@@ -799,7 +806,8 @@
       const list = $("targetPickerList");
       if (!list || !arena || !arena.targets) return;
       const defaults = new Set(arena.targets.default || ["unprotected", "memshield"]);
-      list.innerHTML = (arena.targets.available || []).map(name =>
+      const offered = arena.public_mode ? ((arena.public_restrictions || {}).targets || []) : (arena.targets.available || []);
+      list.innerHTML = offered.map(name =>
         `<label><input type="checkbox" value="${esc(name)}" ${defaults.has(name) ? "checked" : ""}/> ${esc(name)}</label>`
       ).join("");
       list.querySelectorAll("input").forEach(b => b.addEventListener("change", () => {

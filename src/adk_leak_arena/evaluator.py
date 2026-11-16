@@ -1,6 +1,6 @@
 """Automated red-team benchmark evaluator over N memory targets.
 
-S1-S5 (+ S7, S8 when selected) are attacks, S6 and S9 are reported separately, and the
+S1-S5 (+ S7, S8, S9 when selected) are attacks, S6 is reported separately, and the
 Control row measures recall and latency with a correct application filter."""
 
 from __future__ import annotations
@@ -316,14 +316,14 @@ async def run_full_benchmark(
             "caller_id": caller_id,
             "engine": engine,
             "top_k": effective_top_k,
-            "seed_size": current_seed_size(),
+            "seed_size": current_seed_size(config),
             "elapsed_ms": round(elapsed_ms, 2),
             "steps_completed": step,
             "total_steps": total_steps,
             "targets": target_info,
             "methodology": {
                 "seed_records": len(SEED_RECORDS),
-                "seed_size": current_seed_size(),
+                "seed_size": current_seed_size(config),
                 "tenants": list(TENANTS),
                 "top_k": effective_top_k,
                 "targets": list(names),
@@ -335,7 +335,9 @@ async def run_full_benchmark(
                 "latency_definition": (
                     "Wall time of the target's search call (for PostgreSQL targets: pooled "
                     "connection checkout + transaction + search SQL, adk-memshield including its "
-                    "set_config round-trip; for Qdrant/Mem0: the client search call); embedding excluded."
+                    "set_config round-trip; for Qdrant: the client search call), query embedding "
+                    "excluded; for Mem0: the arena adapter's two Mem0 searches, which embed the query "
+                    "themselves, so embedding is included."
                 ),
                 "recall_definition": (
                     "Recall@K over queries whose relevant seed records include at least one the "

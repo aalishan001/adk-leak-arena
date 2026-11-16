@@ -6,6 +6,7 @@ The default target set is the 0.1.0 pair (unprotected pgvector and adk-memshield
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import threading
@@ -255,6 +256,10 @@ def ensure_schema_and_seed(config: ArenaConfig) -> dict[str, Any]:
                     cur.execute(sql_path.read_text(encoding="utf-8"))
                 cur.execute("TRUNCATE TABLE memories, memories_unprotected;")
     except Exception:
+        if config.schema:
+            # A run namespace must never fall back to the app DSN: with search_path
+            # <schema>,public a missing run table would resolve to the shared one.
+            raise
         with psycopg.connect(config.db_dsn, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute("TRUNCATE TABLE memories, memories_unprotected;")
@@ -319,8 +324,10 @@ def ensure_schema_and_seed(config: ArenaConfig) -> dict[str, Any]:
         asyncio.run(_seed_both())
 
     # A full reseed removes synthetic, fixture and CTF-injected rows, so reset their trackers.
-    clear_injected_canaries()
-    mark_baseline_reseeded()
+    # Run namespaces have their own tables: they leave the shared console's trackers alone.
+    if not config.schema:
+        clear_injected_canaries()
+    mark_baseline_reseeded(config)
     probe_db_security_posture(config, refresh=True)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
     return {
@@ -720,7 +727,10 @@ def get_target_set(config: ArenaConfig, names: Sequence[str] | None) -> TargetSe
     with _TARGET_SETS_LOCK:
         tset = _TARGET_SETS.get(key)
         if tset is None:
-            tset = TargetSet(config, parsed, namespace=config.schema)
+            # Each cached combination gets its own external collections, so a new combination
+            # never resets a collection another one is searching.
+            namespace = config.schema or "console_" + hashlib.sha1(",".join(parsed).encode()).hexdigest()[:10]
+            tset = TargetSet(config, parsed, namespace=namespace)
             # Non-SQL targets get the baseline dataset once per process (SQL targets are
             # seeded by ensure_schema_and_seed).
             for target in tset.external():
@@ -776,7 +786,11 @@ async def run_side_by_side_comparison(
     `relevant_keys` enables Recall@K scoring; when omitted, it is looked up from the
     benchmark query bank by exact text (custom queries are reported as recall n/a).
     """
-    tset = targets if isinstance(targets, TargetSet) else get_target_set(config, targets or DEFAULT_TARGETS)
+    tset = (
+        targets
+        if isinstance(targets, TargetSet)
+        else await asyncio.to_thread(get_target_set, config, targets or DEFAULT_TARGETS)
+    )
     persona = CALLER_PERSONAS.get(caller_id, CALLER_PERSONAS["alice_analyst"])
     preset = PRESET_BY_ID.get(preset_id or "S1")
     effective_top_k = max(1, min(int(top_k or config.top_k), 20))
@@ -871,7 +885,7 @@ async def run_side_by_side_comparison(
             memshield_turn_ms=float(right["total_runner_ms"]),
             total_turn_ms=total_turn_ms,
             unprotected_sql=str(left["telemetry"].get("sql", "")),
-            table_rows=current_seed_size(),
+            table_rows=current_seed_size(config),
         )
 
     result: dict[str, Any] = {

@@ -78,4 +78,7 @@ def run_namespace(
         if schema:
             _close_pools(run_cfg.db_dsn)
             _close_pools(run_cfg.admin_dsn)
+            from .scale import forget_namespace
+
+            forget_namespace(run_cfg)
             drop_run_schema(config, schema)

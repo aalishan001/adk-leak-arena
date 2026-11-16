@@ -236,26 +236,42 @@ EXIT_OK, EXIT_FAIL, EXIT_ERROR = 0, 1, 2
 
 def gate(report: dict[str, Any], *, fail_on: str, min_recall: float | None) -> tuple[int, list[str]]:
     """Decide the exit code: 1 when a protected target leaks in an attack scenario (boundary
-    rows such as S6 are excluded) or its recall is below ``min_recall``; 2 on run errors."""
+    rows such as S6 are excluded) or its recall is below ``min_recall``; 2 on run errors,
+    including a protected target that refused to run (unless it is a refusal demo target)."""
     reasons: list[str] = []
     info = {t["name"]: t for t in _target_info(report)}
     errors = 0
+    refused: set[str] = set()
     for s in report["scenarios"]:
         per = s.get("targets") or {}
         for name, m in per.items():
+            if m.get("configuration_refused"):
+                t = info.get(name, {})
+                if t.get("protected") and not t.get("expects_refusal"):
+                    refused.add(name)
+                continue
             if not m.get("applicable", True):
                 continue
             errors += int(m.get("retrieval_errors", 0))
             if not info.get(name, {}).get("protected"):
                 continue
-            if fail_on == "leak" and s["id"] in ATTACK_IDS and not s.get("boundary"):
+            gated = (s["id"] in ATTACK_IDS or s["id"] == "CONTROL") and not s.get("boundary")
+            if fail_on == "leak" and gated:
                 if m["queries_leaking_pct"] > 0:
                     reasons.append(f"{name} leaked in {s['id']} ({m['queries_leaking_pct']}% of queries)")
+                elif m.get("canary_exfiltration_pct", 0) > 0:
+                    reasons.append(
+                        f"{name}: the agent repeated an unauthorized canary in {s['id']} "
+                        f"({m['canary_exfiltration_pct']}% of queries)"
+                    )
             recall = m.get("authorized_recall_pct")
             if min_recall is not None and recall is not None and recall < min_recall * 100.0:
                 reasons.append(f"{name} recall {recall}% < {min_recall * 100:.0f}% in {s['id']}")
-    if errors:
-        return EXIT_ERROR, [f"{errors} retrieval error(s) during the run"] + reasons
+    if refused:
+        reasons = [f"{name} refused to run (configuration verdict)" for name in sorted(refused)] + reasons
+    if errors or refused:
+        problems = [f"{errors} retrieval error(s) during the run"] if errors else []
+        return EXIT_ERROR, problems + reasons
     return (EXIT_FAIL if reasons else EXIT_OK), reasons
 
 

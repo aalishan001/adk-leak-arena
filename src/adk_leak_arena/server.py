@@ -29,6 +29,7 @@ from .dataset import (
     PRESET_BY_ID,
     S6_FIXTURE_RECORDS,
     S7_FIXTURE_RECORDS,
+    SCENARIO_FIXTURES,
     SEED_RECORDS,
     TENANTS,
     canary_tokens,
@@ -45,6 +46,9 @@ from .runner_pair import (
 )
 from .scale import SEED_SIZE_OPTIONS, TOP_K_OPTIONS, apply_seed_size, current_seed_size
 from .targets import DEFAULT_TARGETS, TARGET_CLASSES, parse_targets
+
+# Targets a public (read-only) console may run: PostgreSQL only, no admin-DSN target.
+PUBLIC_TARGETS: tuple[str, ...] = ("unprotected", "memshield", "memshield_unpinned")
 from .unprotected_service import FailureMode
 
 logger = logging.getLogger(__name__)
@@ -315,6 +319,11 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
                 "gemini_api": f"Running Gemini ({cfg.gemini_model})...",
             },
             "public_mode": cfg.public_mode,
+            "public_restrictions": {
+                "targets": list(PUBLIC_TARGETS),
+                "engines": ["deterministic_agent"],
+                "blocked_presets": sorted(SCENARIO_FIXTURES),
+            },
             "targets": {
                 "default": list(DEFAULT_TARGETS),
                 "available": sorted(TARGET_CLASSES),
@@ -355,6 +364,16 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/attack")
     async def execute_attack(req: AttackRequest) -> dict[str, Any]:
+        if cfg.public_mode:
+            # Read-only and free to serve: no paid or local-GPU engines, no stores that need
+            # resetting, no presets that plant fixture rows, nothing on the admin DSN.
+            if req.engine != "deterministic_agent":
+                raise HTTPException(status_code=403, detail="public mode runs the deterministic_agent engine only")
+            extra = sorted(set(req.targets) - set(PUBLIC_TARGETS))
+            if extra:
+                raise HTTPException(status_code=403, detail=f"public mode does not offer targets {extra}")
+            if (req.preset_id or "S1") in SCENARIO_FIXTURES:
+                raise HTTPException(status_code=403, detail="this scenario plants fixture rows; not available in public mode")
         await _ensure_seeded()
         preset = PRESET_BY_ID.get(req.preset_id or "S1", ATTACK_PRESETS[0])
         query_text = (req.query or "").strip() or preset.default_query
@@ -433,6 +452,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.delete("/api/history")
     async def clear_history() -> dict[str, Any]:
+        _reject_if_public("clear the run history")
         return {"cleared": history.clear()}
 
     @app.get("/api/history/{run_id}", response_model=None)

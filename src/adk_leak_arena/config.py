@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field, replace
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 # Gemini API model used by `--engine gemini_api` unless GEMINI_MODEL overrides it. A current
 # generally available Flash model (gemini-2.5-flash, the 0.1.0 default, is retired).
@@ -23,9 +23,13 @@ def with_search_path(dsn: str, schema: str) -> str:
     if not _SCHEMA_RE.match(schema):
         raise ValueError(f"unsafe schema name: {schema!r}")
     parsed = urlparse(dsn)
-    query = [(k, v) for k, v in parse_qsl(parsed.query) if k != "options"]
-    query.append(("options", f"-csearch_path={schema},public"))
-    return urlunparse(parsed._replace(query=urlencode(query)))
+    if not parsed.scheme.startswith("postgres"):
+        raise ValueError("run namespaces need a postgresql:// URI DSN")
+    pairs = parse_qsl(parsed.query)
+    kept = [o for k, v in pairs if k == "options" for o in v.split() if not o.startswith("-csearch_path=")]
+    query = [(k, v) for k, v in pairs if k != "options"]
+    query.append(("options", " ".join([f"-csearch_path={schema},public", *kept])))
+    return urlunparse(parsed._replace(query=urlencode(query, quote_via=quote)))
 
 
 @dataclass
@@ -83,7 +87,8 @@ class ArenaConfig:
     startup_baseline: bool = field(
         default_factory=lambda: _env_flag("ARENA_STARTUP_BASELINE", "1")
     )
-    # Read-only console for public deployments: hides the write sandbox (/api/inject).
+    # Read-only console for public deployments: inject, reset, rescale, benchmark jobs and
+    # history deletion return 403 (and are hidden in the console); attacks still run.
     public_mode: bool = field(default_factory=lambda: _env_flag("ARENA_PUBLIC_MODE", "0"))
     # Postgres schema holding this run's tables ("" = the default search_path).
     schema: str = ""

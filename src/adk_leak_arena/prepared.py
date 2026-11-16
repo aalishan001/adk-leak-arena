@@ -285,6 +285,10 @@ def run_prepared_mode(
                     f"rows removed by filter {res['explain']['rows_removed_by_filter']}")
                 results.append(res)
         namespace = run_cfg.schema
+        if measure_cfg is not run_cfg:
+            from .namespaces import _close_pools
+
+            _close_pools(measure_cfg.db_dsn)
     return {
         "mode": "prepared_connection",
         "seed_size": seed_size,
