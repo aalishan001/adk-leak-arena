@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adk-leak-arena"
-version = "0.1.0"
-description = "Red-Team Evaluation & Live SQL/RLS Telemetry Console for Google ADK Multi-Tenant & Multi-Agent Memory"
+version = "0.2.0"
+description = "Red-team evaluation harness and live SQL/RLS telemetry console for agent memory stores (Google ADK, pgvector, Qdrant, Mem0)"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
