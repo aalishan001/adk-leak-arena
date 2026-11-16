@@ -140,6 +140,7 @@ class MemoryTarget:
     capabilities: Capabilities = Capabilities()
     version: str = ""
     supports_synthetic: bool = False  # can take the synthetic stress rows (seed sizes > 36)
+    expects_refusal: bool = False  # a demo target whose configuration refusal is the point
 
     def __init__(self, config: ArenaConfig, *, namespace: str = "") -> None:
         self.config = config
@@ -182,6 +183,7 @@ class MemoryTarget:
             "label": self.label,
             "protected": self.protected,
             "version": self.version,
+            "expects_refusal": self.expects_refusal,
             "capabilities": asdict(self.capabilities),
         }
 
@@ -311,6 +313,11 @@ class MemShieldTarget(MemoryTarget):
             from adk_memshield import HmacIdentityVerifier
 
             verifier = HmacIdentityVerifier({_ARENA_KID: _ARENA_KEY})
+        # S7 and S9 test the database controls themselves, so memshield runs them with no
+        # application WHERE clause: only the RLS policy (compartments, the bound identity)
+        # decides what comes back. Its default search would otherwise filter by itself.
+        rls_only = mistake.simulate_missing_app_filter or mistake.failure_mode in RLS_ONLY_MODES
+        pool = self._s9_pool() if mistake.failure_mode == "pooled_session_bleed" else None
         service = MemShieldMemoryService(
             config=MemShieldConfig(
                 dsn=self.dsn,
@@ -319,10 +326,11 @@ class MemShieldTarget(MemoryTarget):
                 compartments=list(getattr(persona, "compartments", ()) or ()),
                 top_k=top_k,
                 table_name="memories",
-                simulate_missing_app_filter=mistake.simulate_missing_app_filter,
+                simulate_missing_app_filter=rls_only,
                 identity_verifier=verifier,
             ),
             embed_fn=embed_fn,
+            pool=pool,
         )
         if self.plan_cache_mode is not None:
             service.store.plan_cache_mode = self.plan_cache_mode
@@ -332,6 +340,29 @@ class MemShieldTarget(MemoryTarget):
             _wrap_leftover_session_state(service)
         return service
 
+    def _s9_pool(self) -> Any:
+        """S9: a one-connection pool with memshield's own check-in reset, so the planted
+        session state and the search provably share one PostgreSQL backend."""
+        with _S9_LOCK:
+            pool = getattr(self, "_s9", None)
+            if pool is None:
+                from adk_memshield import reset_connection
+                from psycopg_pool import ConnectionPool
+
+                pool = ConnectionPool(self.dsn, min_size=1, max_size=1, open=True,
+                                      reset=reset_connection, name=f"arena-s9-{self.name}")
+                self._s9 = pool
+            return pool
+
+    def close(self) -> None:
+        pool = getattr(self, "_s9", None)
+        if pool is not None:
+            pool.close()
+            self._s9 = None
+
+
+RLS_ONLY_MODES = frozenset({"missing_compartment_filter", "pooled_session_bleed"})
+_S9_LOCK = threading.Lock()
 
 # S8: a per-process HMAC key for the arena's identity tokens (never stored or logged).
 _ARENA_KID = "arena"
@@ -391,25 +422,30 @@ def _wrap_verified_token(service: Any, *, persona: CallerPersona, spoofed_user_i
 
 
 def _wrap_leftover_session_state(service: Any) -> None:
-    """S9: the previous request on memshield's pool SETs another caller at session level."""
+    """S9: the previous request on memshield's pooled connection SETs another caller at
+    session level (plain SET, no LOCAL); the search then reuses that same backend."""
     from .unprotected_service import S9_PREVIOUS_CALLER
 
     orig = service.search_memory
     pool = service.store._pool
 
-    def _plant_and_probe() -> str:
+    def _plant_and_probe() -> tuple[str, int, int]:
         with pool.connection() as conn:  # previous request: session-level SET (no LOCAL)
             conn.execute("SELECT set_config('app.current_user_id', %s, false)", (S9_PREVIOUS_CALLER,))
-        with pool.connection() as conn:  # what the next checkout inherits
-            value = conn.execute("SELECT current_setting('app.current_user_id', true)").fetchone()[0]
-        return str(value or "")
+            planted_pid = int(conn.execute("SELECT pg_backend_pid()").fetchone()[0])
+        with pool.connection() as conn:  # what the next checkout of that backend inherits
+            value, pid = conn.execute(
+                "SELECT current_setting('app.current_user_id', true), pg_backend_pid()"
+            ).fetchone()
+        return str(value or ""), planted_pid, int(pid)
 
     async def search_memory(*, app_name: str, user_id: str, query: str) -> SearchMemoryResponse:
-        inherited = await asyncio.to_thread(_plant_and_probe)
+        inherited, planted_pid, probe_pid = await asyncio.to_thread(_plant_and_probe)
         resp = await orig(app_name=app_name, user_id=user_id, query=query)
         tel = service.last_query_telemetry
         if tel is not None:
             tel.session_context["previous_request_set"] = f"app.current_user_id='{S9_PREVIOUS_CALLER}' (session level)"
+            tel.session_context["same_backend"] = str(planted_pid == probe_pid).lower()
             tel.session_context["next_checkout_saw"] = inherited or "(empty: reset on return)"
         return resp
 
@@ -429,6 +465,7 @@ class MemShieldSuperuserTarget(MemShieldTarget):
 
     name = "memshield_superuser"
     label = "adk-memshield on a superuser DSN"
+    expects_refusal = True
 
     @property
     def dsn(self) -> str:

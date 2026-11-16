@@ -338,7 +338,8 @@ class UnprotectedPgVectorMemoryService(BaseMemoryService):
         if effective_mode in ("param_spoof_user_id", "forged_identity"):
             # S3: Confused-deputy tool call where target_user_id from prompt/tool args overrides caller user_id.
             # S8: same query; the app has a verified session token but trusts the id the tool passes.
-            target_user = self.spoofed_user_id or extract_spoofed_user_id(query) or "bob_cfo"
+            default_user = "bob_cfo" if effective_mode == "param_spoof_user_id" else user_id
+            target_user = self.spoofed_user_id or extract_spoofed_user_id(query) or default_user
             sql = f"""{select_cols}
             WHERE app_name = %s AND tenant_id = %s
               AND user_id = %s
