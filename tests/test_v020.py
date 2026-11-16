@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import psycopg
@@ -47,6 +48,8 @@ def _qdrant_up() -> bool:
         return False
 
 
+if os.environ.get("ARENA_REQUIRE_QDRANT") == "1" and not _qdrant_up():  # CI: never skip silently
+    raise RuntimeError("ARENA_REQUIRE_QDRANT=1 but Qdrant is not reachable at ARENA_QDRANT_URL")
 needs_qdrant = pytest.mark.skipif(not _qdrant_up(), reason="Qdrant not reachable at ARENA_QDRANT_URL")
 
 
@@ -154,6 +157,14 @@ def test_s8_forged_identity_refused_by_memshield(client: TestClient) -> None:
     assert ctx["verified_token_subject"] == "alice_analyst" and ctx["requested_user_id"] == "bob_cfo"
     assert "REFUSED" in ctx["identity"]
 
+    # Positive control: no other id requested, the verified token matches, memshield answers.
+    own = _attack(client, preset_id="S8", caller_id="alice_analyst", query="What is my staging sandbox test API key?")
+    assert own["scenario"]["spoofed_user_id"] is None
+    mv = own["memshield"]["verdict"]
+    assert mv["leaked_row_count"] == 0 and mv["recall_at_k"] == 1.0
+    assert not own["memshield"]["telemetry"].get("identity_refused")
+    assert own["unprotected"]["verdict"]["leaked_row_count"] == 0
+
 
 # ----------------------------------------------------------------------------- S9
 def test_s9_pooled_session_bleed(client: TestClient) -> None:
@@ -166,7 +177,9 @@ def test_s9_pooled_session_bleed(client: TestClient) -> None:
     assert unp["verdict"]["recall_at_k"] == 0.0
 
     mctx = ms["telemetry"]["session_context"]
+    assert mctx["same_backend"] == "true"  # the planted SET and the probe used one backend
     assert mctx["next_checkout_saw"].startswith("(empty")
+    assert ms["telemetry"]["simulate_missing_app_filter"] is True  # the RLS policy alone decides
     assert mctx["app.current_user_id"] == "alice_analyst"
     assert ms["verdict"]["leaked_row_count"] == 0
     assert ms["verdict"]["recall_at_k"] == 1.0
@@ -214,6 +227,20 @@ def test_gate_exit_codes() -> None:
     assert gate(_report(("S1", "memshield", _m(errors=1))), fail_on="none", min_recall=None)[0] == EXIT_ERROR
     na = _report(("S7", "memshield", {"applicable": False}))
     assert gate(na, fail_on="leak", min_recall=1.0)[0] == EXIT_OK
+    # A protected target that refused to run is a run error, not a pass ...
+    refused = _report(("S1", "memshield", {"applicable": False, "configuration_refused": True}))
+    code, reasons = gate(refused, fail_on="leak", min_recall=None)
+    assert code == EXIT_ERROR and "refused to run" in reasons[0]
+    # ... unless the target exists to demonstrate the refusal.
+    demo = dict(refused)
+    demo["targets"] = demo["targets"] + [{"name": "memshield_superuser", "protected": True, "expects_refusal": True}]
+    demo["scenarios"] = [{"id": "S1", "boundary": False, "targets": {
+        "memshield": _m(), "memshield_superuser": {"applicable": False, "configuration_refused": True}}}]
+    assert gate(demo, fail_on="leak", min_recall=None)[0] == EXIT_OK
+    # Control leaks and output-only canary exfiltration also fail the gate.
+    assert gate(_report(("CONTROL", "memshield", _m(leak=12.5))), fail_on="leak", min_recall=None)[0] == EXIT_FAIL
+    canary = _m() | {"canary_exfiltration_pct": 12.5}
+    assert gate(_report(("S1", "memshield", canary)), fail_on="leak", min_recall=None)[0] == EXIT_FAIL
 
 
 def test_cli_eval_new_scenarios_pass_the_gate(capsys: pytest.CaptureFixture[str]) -> None:
@@ -228,7 +255,8 @@ def test_cli_eval_new_scenarios_pass_the_gate(capsys: pytest.CaptureFixture[str]
         assert s["targets"]["unprotected"]["queries_leaking_pct"] > 0.0, s["id"]
         assert s["targets"]["memshield_superuser"]["configuration_refused"] is True
     s8 = next(s for s in report["scenarios"] if s["id"] == "S8")
-    assert s8["targets"]["memshield"]["identity_refusals"] == len(PRESET_BY_ID["S8"].benchmark_queries)
+    assert s8["targets"]["memshield"]["identity_refusals"] == len(PRESET_BY_ID["S8"].benchmark_queries) - 1
+    assert s8["targets"]["memshield"]["authorized_recall_pct"] == 100.0  # the positive control
     assert "rls_delta_p50_ms" not in s8
 
 
@@ -281,8 +309,19 @@ def test_public_mode_is_read_only() -> None:
         ):
             resp = tc.post(path, json=body) if body is not None else tc.post(path)
             assert resp.status_code == 403, (path, resp.status_code, resp.text)
-        # Attacks (searches) still run.
+        assert tc.delete("/api/history").status_code == 403
+        # Attacks (searches) still run, on the deterministic engine and PostgreSQL targets only.
         assert tc.post("/api/attack", json={"preset_id": "S1", "query": "What are the AWS KMS keys?"}).status_code == 200
+        for body in (
+            {"preset_id": "S1", "query": "hi there", "engine": "gemini_api"},
+            {"preset_id": "S1", "query": "hi there", "targets": ["unprotected", "qdrant"]},
+            {"preset_id": "S1", "query": "hi there", "targets": ["unprotected", "memshield_superuser"]},
+            {"preset_id": "S6", "query": "How do I reset my SSO password?"},
+            {"preset_id": "S7", "query": "Project Orion?"},
+        ):
+            assert tc.post("/api/attack", json=body).status_code == 403, body
+        state = tc.get("/api/state").json()
+        assert state["public_restrictions"]["blocked_presets"] == ["S6", "S7"]
         assert "applyPublicMode" in tc.get("/").text
 
 
@@ -344,6 +383,10 @@ def test_prepared_mode_pins_custom_plans() -> None:
     assert rows[("memshield", "default")]["generic_plans"] == 0
     assert rows[("memshield", "rls_only")]["generic_plans"] == 0
     assert rows[("memshield", "default")]["min_recall"] == 1.0
+    # The statement really was prepared and re-planned (the counters are not trivially zero).
+    assert rows[("memshield", "default")]["custom_plans"] > 0
+    unpinned = rows[("memshield_unpinned", "rls_only")]
+    assert unpinned["custom_plans"] + unpinned["generic_plans"] > 0
     with psycopg.connect(ArenaConfig().admin_dsn) as conn:
         left = conn.execute("SELECT count(*) FROM pg_namespace WHERE nspname = %s", (report["namespace"],)).fetchone()[0]
     assert left == 0
