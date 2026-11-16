@@ -11,9 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install PyPI dependencies including adk-memshield>=0.1.0 and google-adk
+# adk-memshield comes from PyPI; override only to test an unreleased build.
+ARG MEMSHIELD_SPEC="adk-memshield>=0.2.0,<0.3"
+
+# Install PyPI dependencies including adk-memshield and google-adk, plus the optional
+# Qdrant and Mem0 targets.
 RUN pip install --no-cache-dir \
-    "adk-memshield>=0.1.0,<0.2" \
+    "${MEMSHIELD_SPEC}" \
     "google-adk>=2.12.0,<3" \
     "fastapi>=0.115.0" \
     "uvicorn>=0.32.0" \
@@ -23,6 +27,9 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.7.0" \
     "fastembed>=0.4.0" \
     "numpy>=1.26" \
+    "qdrant-client>=1.20,<2" \
+    "mem0ai>=2.2,<3" \
+    "ollama>=0.4" \
     "pytest>=8.0.0" \
     "pytest-asyncio>=0.24.0"
 

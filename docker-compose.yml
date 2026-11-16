@@ -18,6 +18,13 @@ services:
       timeout: 3s
       retries: 15
 
+  # Vector store for the `qdrant` and `mem0` targets (pinned).
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    container_name: adk_leak_arena_qdrant
+    ports:
+      - "56333:6333"
+
   web:
     build: .
     container_name: adk_leak_arena_web
@@ -26,6 +33,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     environment:
       MEMSHIELD_DB_DSN: "postgresql://memshield_app:memshield_pass@db:5432/memshield"
       ARENA_DB_DSN: "postgresql://memshield_app:memshield_pass@db:5432/memshield"
@@ -33,5 +42,7 @@ services:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       OLLAMA_MODEL: "ollama_chat/gemma3:4b"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      ARENA_QDRANT_URL: "http://qdrant:6333"
+      ARENA_STATE_DIR: "/tmp/adk-leak-arena"
     extra_hosts:
       - "host.docker.internal:host-gateway"
