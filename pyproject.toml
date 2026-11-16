@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adk-leak-arena"
-version = "0.2.0"
+version = "0.2.1"
 description = "Red-team evaluation harness and live SQL/RLS telemetry console for agent memory stores (Google ADK, pgvector, Qdrant, Mem0)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -27,6 +27,8 @@ keywords = [
     "llm-evaluation",
     "benchmark",
     "adk",
+    "qdrant",
+    "mem0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

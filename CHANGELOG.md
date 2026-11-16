@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-17
+
+### Security
+- **A public console no longer holds the admin login.** With `ARENA_PUBLIC_MODE=1` the web process refuses to start if `ARENA_ADMIN_DSN` is set, or if its application role is a superuser, has `BYPASSRLS`, or owns an arena table (or belongs to its owner role). It never seeds: `/readyz` and the API return 503 until `leak-arena seed` has run with the admin DSN in a separate job. Public mode no longer falls back to a built-in admin DSN, and the startup baseline run is skipped.
+- `deploy/`: the base web Deployment receives only `ARENA_DB_DSN`; `ARENA_ADMIN_DSN` goes to the seed Job alone. The dev overlay (public mode off) adds it back for the web Deployment. The Cloud Run instructions seed through a Cloud Run job that alone holds the admin DSN.
+
+### Fixed
+- A web process that cannot reach its database at startup now starts anyway (`/healthz` up, `/readyz` 503) and seeds on the next request, instead of failing to start.
+- The "already seeded" flag is kept per database, not per process.
+
+### Changed
+- Manifests and docs point at the 0.2.1 image.
+- PyPI keywords: `qdrant`, `mem0`.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added
