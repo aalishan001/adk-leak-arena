@@ -1,0 +1,9 @@
+# Production: managed PostgreSQL with pgvector (Cloud SQL, AlloyDB, RDS, ...). Create the
+# Secret `adk-leak-arena-db` out of band (keys ARENA_DB_DSN and ARENA_ADMIN_DSN); nothing
+# secret lives in this repository. Public (read-only) mode stays on.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: adk-leak-arena
+resources:
+  - namespace.yaml
+  - ../../base

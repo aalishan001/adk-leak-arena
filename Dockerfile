@@ -44,6 +44,11 @@ COPY tests ./tests
 
 RUN pip install --no-cache-dir --no-deps -e .
 
+# Run as an unprivileged user (uid 10001, matching deploy/). Writable state lives in /tmp.
+RUN useradd --uid 10001 --user-group --no-create-home --home-dir /tmp arena     && chown -R 10001:10001 /opt/fastembed_cache
+USER 10001
+ENV HOME=/tmp ARENA_STATE_DIR=/tmp/adk-leak-arena
+
 EXPOSE 8090
 
 CMD ["leak-arena", "serve", "--host", "0.0.0.0", "--port", "8090"]

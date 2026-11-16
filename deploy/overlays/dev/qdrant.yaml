@@ -1,0 +1,45 @@
+# Optional backend for the qdrant and mem0 targets (development only, no persistence).
+apiVersion: v1
+kind: Service
+metadata:
+  name: adk-leak-arena-qdrant
+spec:
+  selector:
+    app.kubernetes.io/name: adk-leak-arena
+    app.kubernetes.io/component: qdrant
+  ports:
+    - name: http
+      port: 6333
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adk-leak-arena-qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adk-leak-arena
+      app.kubernetes.io/component: qdrant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adk-leak-arena
+        app.kubernetes.io/component: qdrant
+    spec:
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.20.0
+          ports:
+            - name: http
+              containerPort: 6333
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi

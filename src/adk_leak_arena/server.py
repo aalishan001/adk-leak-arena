@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import adk_memshield
+import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -256,6 +257,25 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             status_code=500,
             content={"error": type(exc).__name__, "detail": _safe_text(str(exc))[:500]},
         )
+
+    @app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        """Liveness: the process serves requests."""
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def readyz() -> dict[str, Any]:
+        """Readiness: the arena database answers on the application DSN."""
+
+        def _ping() -> None:
+            with psycopg.connect(cfg.db_dsn, connect_timeout=3) as conn:
+                conn.execute("SELECT 1")
+
+        try:
+            await asyncio.to_thread(_ping)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"database not ready ({type(exc).__name__})") from None
+        return {"status": "ready", "public_mode": cfg.public_mode}
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:

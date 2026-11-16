@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adk-leak-arena-config
+data:
+  ARENA_APP_NAME: acme_enterprise_copilot
+  ARENA_STATE_DIR: /tmp/adk-leak-arena
+  # The startup baseline run fills the history panel; off so readiness is quick.
+  ARENA_STARTUP_BASELINE: "0"
+  # Read-only console: no injection, reset, rescale or benchmark jobs.
+  ARENA_PUBLIC_MODE: "1"
+  ARENA_TARGET_CONCURRENCY: "4"
+  # Optional targets: point at a Qdrant service to enable the qdrant and mem0 targets.
+  ARENA_QDRANT_URL: http://adk-leak-arena-qdrant:6333

@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/name: adk-leak-arena
+      app.kubernetes.io/part-of: adk-leak-arena
+    includeSelectors: false
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - seed-job.yaml
+images:
+  - name: adk-leak-arena
+    newName: ghcr.io/aalishan001/adk-leak-arena
+    newTag: "0.2.0"

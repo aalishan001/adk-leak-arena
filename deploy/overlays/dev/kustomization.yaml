@@ -1,0 +1,28 @@
+# Local or dev cluster: adds a throwaway PostgreSQL (pgvector) StatefulSet and Qdrant,
+# turns public mode off, and builds the DB secret from dev.env (gitignored; copy
+# dev.env.example). Production uses managed PostgreSQL: see ../production.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: adk-leak-arena-dev
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+  - qdrant.yaml
+secretGenerator:
+  - name: adk-leak-arena-db
+    envs:
+      - dev.env
+  - name: adk-leak-arena-postgres
+    envs:
+      - dev.env
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - target:
+      kind: ConfigMap
+      name: adk-leak-arena-config
+    patch: |-
+      - op: replace
+        path: /data/ARENA_PUBLIC_MODE
+        value: "0"

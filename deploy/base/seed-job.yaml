@@ -1,0 +1,63 @@
+# Creates (or upgrades) the arena schema and roles, then loads the baseline rows.
+# Safe to re-run: the schema script is idempotent and the tables are truncated first.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: adk-leak-arena-seed
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adk-leak-arena
+        app.kubernetes.io/component: seed
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: adk-leak-arena
+          args: ["leak-arena", "seed"]
+          envFrom:
+            - configMapRef:
+                name: adk-leak-arena-config
+          env:
+            - name: ARENA_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_DB_DSN
+            - name: MEMSHIELD_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_DB_DSN
+            - name: ARENA_ADMIN_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_ADMIN_DSN
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

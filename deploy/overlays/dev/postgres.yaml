@@ -1,0 +1,70 @@
+# Development only: a single-node PostgreSQL with pgvector. No backups, no HA.
+apiVersion: v1
+kind: Service
+metadata:
+  name: adk-leak-arena-postgres
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: adk-leak-arena
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: adk-leak-arena-postgres
+spec:
+  serviceName: adk-leak-arena-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adk-leak-arena
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adk-leak-arena
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: memshield
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-postgres
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "memshield"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

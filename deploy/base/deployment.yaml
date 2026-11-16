@@ -1,0 +1,102 @@
+# The web process keeps the run history and the single benchmark slot in memory, so it
+# runs as exactly one replica. Recreate (not RollingUpdate) avoids two pods overlapping
+# during a rollout. Scale reads by running more arenas against separate databases, not
+# by raising replicas.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adk-leak-arena
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adk-leak-arena
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adk-leak-arena
+        app.kubernetes.io/component: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: adk-leak-arena
+          imagePullPolicy: IfNotPresent
+          args: ["leak-arena", "serve", "--host", "0.0.0.0", "--port", "8090"]
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: adk-leak-arena-config
+          env:
+            # Secret with keys ARENA_DB_DSN (memshield_app role, NOBYPASSRLS) and
+            # ARENA_ADMIN_DSN (schema owner, used for seeding and synthetic loads).
+            - name: ARENA_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_DB_DSN
+            - name: MEMSHIELD_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_DB_DSN
+            - name: ARENA_ADMIN_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-db
+                  key: ARENA_ADMIN_DSN
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: adk-leak-arena-gemini
+                  key: GEMINI_API_KEY
+                  optional: true
+            - name: HOME
+              value: /tmp
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
