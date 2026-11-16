@@ -1,5 +1,88 @@
 # Benchmarks: provenance for every published number
 
+## 0.2.0 runs (2026-11-16)
+
+All 0.2.0 numbers come from runs on 2026-11-16 (UTC) against **adk-memshield 0.2.0 installed from PyPI**. Each raw output in [`benchmarks/runs/2026-11-16/`](benchmarks/runs/2026-11-16/) starts with its command and the versions it ran with; `benchmarks/run_v020.sh` re-runs the eval set and `*.cmd` files hold the prepared-mode commands. No run was adjusted, filtered or re-tried to reach a number.
+
+| Item | Value |
+| :--- | :--- |
+| Packages | adk-leak-arena 0.2.0 (this tree), adk-memshield 0.2.0 (PyPI), google-adk 2.14.1, psycopg 3.3.9, qdrant-client 1.20.0, mem0ai 2.2.1, fastembed 0.9.1, Python 3.12.15 |
+| Stores | PostgreSQL 16.15 + pgvector 0.8.7 (`pgvector/pgvector:pg16`); Qdrant server 1.20.0 (`qdrant/qdrant:v1.20.0`); Mem0 OSS over that Qdrant, `infer=False`, FastEmbed `BAAI/bge-small-en-v1.5` |
+| Host | Docker Desktop on a laptop (linux/amd64). Latency is noisy; use p50 |
+| Engine | `deterministic_agent` for every run (no Gemini key was available, so the L5 Gemini run was not made) |
+
+### Default run reproduces 0.1.0 (`eval-default.txt`)
+
+`leak-arena eval` (S1–S6 + Control, `unprotected` + `memshield`, own schema): attack aggregate **97.5% → 0.0%** queries leaking, leaked row share **63.2% → 0.0%**, rank-1 hijack 72.5% → 0.0%, canary exfiltration 87.5% → 0.0%, authorized recall@3 **86.4% (n=22) → 100.0% (n=22)**. Every security and recall cell matches the 0.1.0 table below. Gate: exit 0.
+
+### All scenarios, five targets (`eval-all-scenarios-5-targets.txt`)
+
+`leak-arena eval --scenarios all --targets unprotected,memshield,memshield_unpinned,qdrant,mem0`, attack aggregate (S1–S5, S7–S9; S6 excluded as the boundary):
+
+| Target | Queries leaking ≥1 row | Leaked row share | Rank-1 hijack | Canary exfil | Authorized recall@3 (n) | p50 / p95 search |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| unprotected pgvector | 92.9% | 64.0% | 71.4% | 83.9% | 79.3% (29) | 6.94 / 28.65 ms |
+| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 100.0% (29) | 5.87 / 19.71 ms |
+| adk-memshield, plan pinning off | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% (29) | 6.73 / 22.51 ms |
+| Qdrant 1.20 (payload filters) | 94.1% | 62.7% | 70.6% | 82.4% | 88.5% (26) | 5.81 / 25.19 ms |
+| Mem0 OSS 2.2 (user_id + metadata filters) | 97.8% | 62.2% | 75.6% | 86.7% | 86.4% (22) | 36.35 / 149.47 ms |
+
+Read this as "what happens when the application passes the wrong filter", the same mistake expressed through each store's own API; Qdrant and Mem0 leak because their isolation is the filter the application passes, which is how they are designed, not a defect. The denominators differ because n/a cells are excluded: Mem0 has no compartments (S7 n/a) and neither Qdrant nor Mem0 has session state (S9 n/a). Mem0's latency includes its own query embedding; the other targets' figures exclude it. With a correct filter (Control) every target returned 0 unauthorized rows and 100% recall; in S6 (authorized same-tier lures) Mem0's own-rows-plus-shared merge reached 66.7% recall against 100% elsewhere.
+
+### S7–S9 and the posture verdict (`eval-v020-scenarios-5-targets.txt`)
+
+| Scenario | unprotected | memshield 0.2.0 | memshield on superuser DSN | Qdrant | Mem0 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| S7 compartment read-across | 50.0% leaking, recall 100% (n=4) | **0.0%**, recall 100% (n=4) | refused (config) | 50.0%, recall 100% | n/a |
+| S8 forged identity vs verified token | 100.0% leaking | **0.0%**: 5/5 calls refused on identity | refused (config) | 100.0% | 100.0% |
+| S9 pooled session-context bleed | 100.0% leaking, recall **0.0%** (n=3) | **0.0%**, recall 100% (n=3) | refused (config) | n/a | n/a |
+
+S8's memshield latency (0.10 ms p50) is the refusal, before any SQL; refusals are excluded from aggregate latency. In S9 the baseline's telemetry shows `session_user_setting = bob_cfo` and the swallowed `IdentityRebindError`; memshield's shows that the next checkout after the planted session-level `SET` saw an empty setting (reset on return) and its transaction ran as `alice_analyst`.
+
+### Scale: 10,000 rows with HNSW (`eval-10k-hnsw-3-targets.txt`)
+
+`leak-arena eval --seed-size 10000 --hnsw --top-k 10 --repeats 1 --targets unprotected,memshield,qdrant` (9,964 synthetic rows per table loaded with chunked COPY + ANALYZE in 5.6 s; HNSW on both tables in 6.3 s). Attack aggregate:
+
+| Target | Queries leaking | Leaked row share | Canary exfil | Authorized recall@10 (n) | p50 / p95 search |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| unprotected pgvector | 100.0% | 80.9% | 70.0% | 68.2% (22) | 11.27 / 35.37 ms |
+| adk-memshield 0.2.0 | **0.0%** | **0.0%** | **0.0%** | 100.0% (22) | 12.95 / 27.76 ms |
+| Qdrant 1.20 | 100.0% | 69.8% | 90.0% | 90.9% (22) | 10.92 / 31.19 ms |
+
+Control (correct filters): 0 unauthorized rows and 100% recall@10 on all three. Gate: exit 0.
+
+### Prepared-connection mode, 10k and 100k (`prepared-*.json`, `prepared-*.log`)
+
+`leak-arena prepared` repeats one light caller's query 20 times on one pinned connection per target and shape, scores recall@10 against the exact authorized top 10, and records `generic_plans` / `custom_plans` and the `EXPLAIN ANALYZE` plan. Results for 100,000 rows per table:
+
+| Index | Target / shape | Min recall@10 | Empty | Generic / custom | Plan (rows removed by filter) | p50 SQL |
+| :--- | :--- | :---: | :---: | :---: | :--- | ---: |
+| none | unprotected / default | 1.0 | 0/20 | 10 / 5 | Bitmap Heap Scan (48,579) | 55.18 ms |
+| none | memshield / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 65.13 ms |
+| none | memshield_unpinned / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 64.29 ms |
+| none | memshield / rls_only | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 63.21 ms |
+| none | memshield_unpinned / rls_only | 1.0 | 0/20 | 10 / 5 | Bitmap Heap Scan (16,193) | 61.28 ms |
+| HNSW | unprotected / default | **0.0** | **20/20** | 0 / 15 | Index Scan using HNSW (40) | 1.38 ms |
+| HNSW | memshield / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 63.18 ms |
+| HNSW | memshield_unpinned / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 61.86 ms |
+| HNSW | memshield / rls_only | **0.0** | **20/20** | 0 / 15 | Index Scan using HNSW (40) | 1.68 ms |
+| HNSW | memshield_unpinned / rls_only | **0.0** | **20/20** | 0 / 15 | Index Scan using HNSW (40) | 1.69 ms |
+| HNSW, `iterative_scan=relaxed_order` | unprotected / default | 1.0 | 0/20 | 0 / 15 | Index Scan using HNSW (427) | 5.57 ms |
+| HNSW, `iterative_scan=relaxed_order` | memshield / default | 1.0 | 0/20 | 0 / 15 | Bitmap Heap Scan (16,193) | 61.90 ms |
+| HNSW, `iterative_scan=relaxed_order` | memshield / rls_only | 1.0 | 0/20 | 0 / 15 | Index Scan using HNSW (412) | 5.26 ms |
+
+At 10,000 rows with HNSW every shape used a bitmap plan with 1.0 recall; `memshield_unpinned` reached 10 generic plans out of 15 prepared executions, memshield 0.2.0 none. 0 unauthorized rows in all 400 prepared-mode searches. Loading 100,000 rows into both tables took 27–32 s; building both HNSW indexes 108–119 s (`max_parallel_maintenance_workers = 0`).
+
+The finding: with an HNSW index on this data, an index scan followed by a filter starves a light caller completely (40 candidates, 40 filtered), under custom plans, for the unprotected table's correct app filter and for memshield's RLS-only shape. Plan pinning (memshield 0.2.0's fix for the generic-plan collapse) cannot prevent that; pgvector's iterative scan does. memshield's default search shape got an exact plan here. That is a planner choice for this data, not a guarantee.
+
+### Kubernetes manifests (`kubeconform.txt`)
+
+`kustomize build` (v5.8.3) of `deploy/overlays/dev` (11 resources) and `deploy/overlays/production` (5) passes `kubeconform -strict` (v0.8.0) for Kubernetes 1.33.0. Not applied to a live cluster.
+
+---
+
+## 0.1.0 provenance (2026-10-26)
+
 Every number below was re-run on **2026-10-26 IST** (2026-10-25 23:40–23:45 UTC) from a clean,
 committed tree. All raw outputs are saved under [`benchmarks/runs/2026-10-26/`](benchmarks/runs/2026-10-26/)
 and pasted below. No run was adjusted, filtered or re-tried to reach a number.

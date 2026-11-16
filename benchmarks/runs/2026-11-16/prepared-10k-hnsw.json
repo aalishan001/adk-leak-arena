@@ -1,0 +1,943 @@
+{
+  "mode": "prepared_connection",
+  "seed_size": 10000,
+  "hnsw": true,
+  "repeats": 20,
+  "top_k": 10,
+  "caller_id": "alice_analyst",
+  "query": "Platform weekly sync: sprint burndown is on track; retro moved to Friday.",
+  "exact_truth": [
+    "syn_006249",
+    "syn_002463",
+    "syn_006693",
+    "syn_000593",
+    "syn_002725",
+    "syn_008268",
+    "syn_004814",
+    "syn_007691",
+    "syn_009111",
+    "syn_002708"
+  ],
+  "namespace": "arena_run_d6157d62a7a8",
+  "scale": {
+    "seed_size": 10000,
+    "synthetic_rows_per_table": 9964,
+    "synthetic_rows_removed": 0,
+    "generate_ms": 0.0,
+    "load_ms": 3915.0,
+    "elapsed_ms": 3925.3,
+    "method": "admin COPY (chunked) + ANALYZE"
+  },
+  "index": {
+    "hnsw": true,
+    "elapsed_ms": 5433.7
+  },
+  "elapsed_s": 12.0,
+  "results": [
+    {
+      "target": "unprotected",
+      "shape": "default",
+      "executions": 20,
+      "min_recall": 1.0,
+      "mean_recall": 1.0,
+      "first_execution_below_full": null,
+      "empty_results": 0,
+      "leaked_rows": 0,
+      "p50_sql_ms": 4.595,
+      "generic_plans": 0,
+      "custom_plans": 15,
+      "runs": [
+        {
+          "execution": 1,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 15.43,
+          "wall_ms": 26.716
+        },
+        {
+          "execution": 2,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.817,
+          "wall_ms": 8.018
+        },
+        {
+          "execution": 3,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.793,
+          "wall_ms": 7.465
+        },
+        {
+          "execution": 4,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.617,
+          "wall_ms": 5.968
+        },
+        {
+          "execution": 5,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.27,
+          "wall_ms": 5.403
+        },
+        {
+          "execution": 6,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.37,
+          "wall_ms": 6.704
+        },
+        {
+          "execution": 7,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.183,
+          "wall_ms": 6.512
+        },
+        {
+          "execution": 8,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.642,
+          "wall_ms": 6.176
+        },
+        {
+          "execution": 9,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.227,
+          "wall_ms": 5.486
+        },
+        {
+          "execution": 10,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.572,
+          "wall_ms": 5.651
+        },
+        {
+          "execution": 11,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.83,
+          "wall_ms": 6.098
+        },
+        {
+          "execution": 12,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.473,
+          "wall_ms": 5.738
+        },
+        {
+          "execution": 13,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.162,
+          "wall_ms": 5.223
+        },
+        {
+          "execution": 14,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.08,
+          "wall_ms": 5.286
+        },
+        {
+          "execution": 15,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.046,
+          "wall_ms": 5.37
+        },
+        {
+          "execution": 16,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 3.837,
+          "wall_ms": 5.018
+        },
+        {
+          "execution": 17,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.443,
+          "wall_ms": 5.673
+        },
+        {
+          "execution": 18,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 3.997,
+          "wall_ms": 5.045
+        },
+        {
+          "execution": 19,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.036,
+          "wall_ms": 6.052
+        },
+        {
+          "execution": 20,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.015,
+          "wall_ms": 6.057
+        }
+      ],
+      "explain": {
+        "rows_removed_by_filter": 4823,
+        "scan": "Bitmap Heap Scan",
+        "actual_rows": 10,
+        "execution_ms": 3.987
+      }
+    },
+    {
+      "target": "memshield",
+      "shape": "default",
+      "executions": 20,
+      "min_recall": 1.0,
+      "mean_recall": 1.0,
+      "first_execution_below_full": null,
+      "empty_results": 0,
+      "leaked_rows": 0,
+      "p50_sql_ms": 6.073,
+      "generic_plans": 0,
+      "custom_plans": 15,
+      "runs": [
+        {
+          "execution": 1,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 10.592,
+          "wall_ms": 24.796
+        },
+        {
+          "execution": 2,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.084,
+          "wall_ms": 7.357
+        },
+        {
+          "execution": 3,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.192,
+          "wall_ms": 7.726
+        },
+        {
+          "execution": 4,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.063,
+          "wall_ms": 7.522
+        },
+        {
+          "execution": 5,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.841,
+          "wall_ms": 7.151
+        },
+        {
+          "execution": 6,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.453,
+          "wall_ms": 7.773
+        },
+        {
+          "execution": 7,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 7.263,
+          "wall_ms": 8.933
+        },
+        {
+          "execution": 8,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.696,
+          "wall_ms": 8.116
+        },
+        {
+          "execution": 9,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.657,
+          "wall_ms": 8.045
+        },
+        {
+          "execution": 10,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.697,
+          "wall_ms": 7.018
+        },
+        {
+          "execution": 11,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.776,
+          "wall_ms": 8.182
+        },
+        {
+          "execution": 12,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.948,
+          "wall_ms": 8.293
+        },
+        {
+          "execution": 13,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.227,
+          "wall_ms": 7.805
+        },
+        {
+          "execution": 14,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.957,
+          "wall_ms": 7.447
+        },
+        {
+          "execution": 15,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.989,
+          "wall_ms": 7.794
+        },
+        {
+          "execution": 16,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.915,
+          "wall_ms": 7.27
+        },
+        {
+          "execution": 17,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.692,
+          "wall_ms": 7.215
+        },
+        {
+          "execution": 18,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.848,
+          "wall_ms": 7.182
+        },
+        {
+          "execution": 19,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.667,
+          "wall_ms": 6.941
+        },
+        {
+          "execution": 20,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.738,
+          "wall_ms": 7.463
+        }
+      ],
+      "explain": {
+        "rows_removed_by_filter": 4823,
+        "scan": "Bitmap Heap Scan",
+        "actual_rows": 10,
+        "execution_ms": 4.897
+      }
+    },
+    {
+      "target": "memshield_unpinned",
+      "shape": "default",
+      "executions": 20,
+      "min_recall": 1.0,
+      "mean_recall": 1.0,
+      "first_execution_below_full": null,
+      "empty_results": 0,
+      "leaked_rows": 0,
+      "p50_sql_ms": 5.649,
+      "generic_plans": 10,
+      "custom_plans": 5,
+      "runs": [
+        {
+          "execution": 1,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 8.474,
+          "wall_ms": 21.681
+        },
+        {
+          "execution": 2,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.307,
+          "wall_ms": 6.415
+        },
+        {
+          "execution": 3,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.413,
+          "wall_ms": 6.609
+        },
+        {
+          "execution": 4,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.653,
+          "wall_ms": 7.066
+        },
+        {
+          "execution": 5,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.711,
+          "wall_ms": 6.847
+        },
+        {
+          "execution": 6,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.732,
+          "wall_ms": 7.198
+        },
+        {
+          "execution": 7,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.22,
+          "wall_ms": 6.459
+        },
+        {
+          "execution": 8,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.521,
+          "wall_ms": 6.929
+        },
+        {
+          "execution": 9,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.646,
+          "wall_ms": 6.929
+        },
+        {
+          "execution": 10,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.311,
+          "wall_ms": 7.582
+        },
+        {
+          "execution": 11,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.165,
+          "wall_ms": 7.803
+        },
+        {
+          "execution": 12,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.372,
+          "wall_ms": 6.959
+        },
+        {
+          "execution": 13,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.277,
+          "wall_ms": 6.487
+        },
+        {
+          "execution": 14,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.826,
+          "wall_ms": 7.188
+        },
+        {
+          "execution": 15,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.724,
+          "wall_ms": 7.041
+        },
+        {
+          "execution": 16,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.93,
+          "wall_ms": 7.18
+        },
+        {
+          "execution": 17,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.426,
+          "wall_ms": 6.952
+        },
+        {
+          "execution": 18,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.873,
+          "wall_ms": 5.93
+        },
+        {
+          "execution": 19,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.69,
+          "wall_ms": 8.02
+        },
+        {
+          "execution": 20,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.573,
+          "wall_ms": 6.964
+        }
+      ],
+      "explain": {
+        "rows_removed_by_filter": 4823,
+        "scan": "Bitmap Heap Scan",
+        "actual_rows": 10,
+        "execution_ms": 3.575
+      }
+    },
+    {
+      "target": "memshield",
+      "shape": "rls_only",
+      "executions": 20,
+      "min_recall": 1.0,
+      "mean_recall": 1.0,
+      "first_execution_below_full": null,
+      "empty_results": 0,
+      "leaked_rows": 0,
+      "p50_sql_ms": 5.742,
+      "generic_plans": 0,
+      "custom_plans": 15,
+      "runs": [
+        {
+          "execution": 1,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 8.758,
+          "wall_ms": 21.328
+        },
+        {
+          "execution": 2,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.722,
+          "wall_ms": 7.117
+        },
+        {
+          "execution": 3,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.277,
+          "wall_ms": 6.706
+        },
+        {
+          "execution": 4,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.192,
+          "wall_ms": 6.403
+        },
+        {
+          "execution": 5,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.761,
+          "wall_ms": 7.067
+        },
+        {
+          "execution": 6,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.017,
+          "wall_ms": 7.264
+        },
+        {
+          "execution": 7,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.001,
+          "wall_ms": 7.392
+        },
+        {
+          "execution": 8,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.98,
+          "wall_ms": 7.58
+        },
+        {
+          "execution": 9,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.516,
+          "wall_ms": 6.962
+        },
+        {
+          "execution": 10,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.587,
+          "wall_ms": 7.212
+        },
+        {
+          "execution": 11,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.279,
+          "wall_ms": 7.544
+        },
+        {
+          "execution": 12,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.718,
+          "wall_ms": 7.106
+        },
+        {
+          "execution": 13,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.713,
+          "wall_ms": 7.154
+        },
+        {
+          "execution": 14,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.562,
+          "wall_ms": 6.974
+        },
+        {
+          "execution": 15,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.317,
+          "wall_ms": 6.87
+        },
+        {
+          "execution": 16,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.947,
+          "wall_ms": 7.389
+        },
+        {
+          "execution": 17,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.696,
+          "wall_ms": 8.345
+        },
+        {
+          "execution": 18,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 8.354,
+          "wall_ms": 9.877
+        },
+        {
+          "execution": 19,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 6.157,
+          "wall_ms": 7.728
+        },
+        {
+          "execution": 20,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.221,
+          "wall_ms": 6.63
+        }
+      ],
+      "explain": {
+        "rows_removed_by_filter": 4823,
+        "scan": "Bitmap Heap Scan",
+        "actual_rows": 10,
+        "execution_ms": 3.444
+      }
+    },
+    {
+      "target": "memshield_unpinned",
+      "shape": "rls_only",
+      "executions": 20,
+      "min_recall": 1.0,
+      "mean_recall": 1.0,
+      "first_execution_below_full": null,
+      "empty_results": 0,
+      "leaked_rows": 0,
+      "p50_sql_ms": 5.138,
+      "generic_plans": 10,
+      "custom_plans": 5,
+      "runs": [
+        {
+          "execution": 1,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 8.423,
+          "wall_ms": 21.378
+        },
+        {
+          "execution": 2,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 7.97,
+          "wall_ms": 9.442
+        },
+        {
+          "execution": 3,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.664,
+          "wall_ms": 7.132
+        },
+        {
+          "execution": 4,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.485,
+          "wall_ms": 6.723
+        },
+        {
+          "execution": 5,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.954,
+          "wall_ms": 6.463
+        },
+        {
+          "execution": 6,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.667,
+          "wall_ms": 7.013
+        },
+        {
+          "execution": 7,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.085,
+          "wall_ms": 6.166
+        },
+        {
+          "execution": 8,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.402,
+          "wall_ms": 6.548
+        },
+        {
+          "execution": 9,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.75,
+          "wall_ms": 7.028
+        },
+        {
+          "execution": 10,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.266,
+          "wall_ms": 6.937
+        },
+        {
+          "execution": 11,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.037,
+          "wall_ms": 6.392
+        },
+        {
+          "execution": 12,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.927,
+          "wall_ms": 5.955
+        },
+        {
+          "execution": 13,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.191,
+          "wall_ms": 6.393
+        },
+        {
+          "execution": 14,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.582,
+          "wall_ms": 5.637
+        },
+        {
+          "execution": 15,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.813,
+          "wall_ms": 6.393
+        },
+        {
+          "execution": 16,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.855,
+          "wall_ms": 5.999
+        },
+        {
+          "execution": 17,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.051,
+          "wall_ms": 6.302
+        },
+        {
+          "execution": 18,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.789,
+          "wall_ms": 5.895
+        },
+        {
+          "execution": 19,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 4.967,
+          "wall_ms": 6.229
+        },
+        {
+          "execution": 20,
+          "rows": 10,
+          "recall_at_k": 1.0,
+          "leaked_rows": 0,
+          "sql_ms": 5.191,
+          "wall_ms": 6.229
+        }
+      ],
+      "explain": {
+        "rows_removed_by_filter": 4823,
+        "scan": "Bitmap Heap Scan",
+        "actual_rows": 10,
+        "execution_ms": 3.415
+      }
+    }
+  ]
+}

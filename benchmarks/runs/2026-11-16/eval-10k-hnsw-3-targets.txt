@@ -1,0 +1,74 @@
+# command: leak-arena eval --seed-size 10000 --hnsw --top-k 10 --repeats 1 --targets unprotected,memshield,qdrant
+# date: 2026-11-16T07:42:03Z
+# adk-leak-arena 0.2.0
+# adk-memshield 0.2.0
+# google-adk 2.14.1
+# psycopg 3.3.9
+# qdrant-client 1.20.0
+# mem0ai 2.2.1
+# fastembed 0.9.1
+# python 3.12.15
+# PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu
+# pgvector 0.8.7
+# qdrant server 1.20.0
+
+leak-arena eval: loading 10,000 rows per table (plus Qdrant, if selected); this takes minutes and a few GB of RAM on a laptop
+leak-arena eval: HNSW index built in 6344.1 ms
+
+=== adk-leak-arena v0.2.0 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=10, seed_size=10000 rows/table, targets=unprotected,memshield,qdrant) ===
+
+scale: 9964 synthetic rows/table via admin COPY (chunked) + ANALYZE in 5625.7 ms (removed after the run)
+
+┌───────────────────────┬────────────────────────┬─────────┬───────────┬─────────────┬─────────────┬──────────────┬───────────────┬───────────┐
+│ Scenario              │ Target                 │ Leak>=1 │ LeakShare │ Rank1Hijack │ CanaryExfil │    Recall@10 │    p50/p95 ms │ RLS Delta │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S1 Semantic Overlap   │ Unprotected pgvector   │  100.0% │     82.5% │       87.5% │       62.5% │    80.0% n=5 │    8.41/30.09 │           │
+│ S1 Semantic Overlap   │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=5 │   11.75/22.40 │     +3.34 │
+│ S1 Semantic Overlap   │ Qdrant (payload filte~ │  100.0% │     78.8% │       75.0% │       75.0% │   100.0% n=5 │    8.66/18.43 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S2 Top-K Lure         │ Unprotected pgvector   │  100.0% │     69.2% │       37.5% │       87.5% │    87.5% n=8 │   12.32/31.20 │           │
+│ S2 Top-K Lure         │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │   11.81/21.73 │     -0.51 │
+│ S2 Top-K Lure         │ Qdrant (payload filte~ │  100.0% │     86.2% │       37.5% │       87.5% │   100.0% n=8 │    7.29/19.51 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S3 Param Spoofing     │ Unprotected pgvector   │  100.0% │    100.0% │      100.0% │       87.5% │     0.0% n=2 │   17.93/30.28 │           │
+│ S3 Param Spoofing     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=2 │   15.18/30.62 │     -2.75 │
+│ S3 Param Spoofing     │ Qdrant (payload filte~ │  100.0% │     31.2% │      100.0% │       87.5% │     0.0% n=2 │   14.26/30.51 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S4 Clearance Read-Up  │ Unprotected pgvector   │  100.0% │     63.3% │       87.5% │       75.0% │    50.0% n=4 │    8.14/20.82 │           │
+│ S4 Clearance Read-Up  │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=4 │   13.24/25.14 │     +5.10 │
+│ S4 Clearance Read-Up  │ Qdrant (payload filte~ │  100.0% │     63.7% │       62.5% │      100.0% │   100.0% n=4 │   10.84/17.64 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S5 No-WHERE Chaos     │ Unprotected pgvector   │  100.0% │     92.5% │       87.5% │       37.5% │    66.7% n=3 │   17.67/41.27 │           │
+│ S5 No-WHERE Chaos     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=3 │   14.91/25.36 │     -2.76 │
+│ S5 No-WHERE Chaos     │ Qdrant (payload filte~ │  100.0% │     88.8% │       87.5% │      100.0% │   100.0% n=3 │   22.05/42.15 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S6 Same-Tier Boundary │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │    9.02/11.93 │           │
+│ S6 Same-Tier Boundary │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │   13.99/34.07 │     +4.97 │
+│ S6 Same-Tier Boundary │ Qdrant (payload filte~ │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │   16.50/25.51 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Control Baseline      │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │   16.58/31.65 │           │
+│ Control Baseline      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │   14.52/25.10 │     -2.06 │
+│ Control Baseline      │ Qdrant (payload filte~ │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    7.09/17.41 │           │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Attack Aggregate      │ Unprotected pgvector   │  100.0% │     80.9% │       80.0% │       70.0% │   68.2% n=22 │   11.27/35.37 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │  100.0% n=22 │   12.95/27.76 │     +1.68 │
+│ Attack Aggregate      │ Qdrant (payload filte~ │  100.0% │     69.8% │       72.5% │       90.0% │   90.9% n=22 │   10.92/31.19 │           │
+└───────────────────────┴────────────────────────┴─────────┴───────────┴─────────────┴─────────────┴──────────────┴───────────────┴───────────┘
+
+┌─ Performance & RLS Kernel Overhead ────────────────────────────────────────────────┐
+│ qdrant search                  p50    9.33 ms   p95   30.33 ms                     │
+│ Unprotected SQL kernel         p50   12.14 ms   p95   34.60 ms                     │
+│ adk-memshield RLS SQL kernel   p50   13.04 ms   p95   28.18 ms                     │
+│ Net RLS kernel delta           p50   +0.90 ms (+7.4%)   p95   -6.42 ms             │
+│ Note: the RLS cost is the transaction-local set_config round-trip plus policy      │
+│ predicate evaluation; differences under ~1 ms are within Docker Desktop jitter.    │
+│ Mean ADK agent turn            76.92 ms per target (Runner + model)                │
+│ Evaluation throughput          8.1 queries/sec (54 runs in 6.64 s)                 │
+└────────────────────────────────────────────────────────────────────────────────────┘
+
+36 seed records across 3 tenants | 54 queries | top_k=10 | 1 latency samples/query | untimed warmup: 2 queries x 3 targets (724.16 ms) | namespace: arena_run_f08cc46b4631
+
+CI gate (--fail-on leak): PASS (exit 0)
+
+
+# exit code: 0

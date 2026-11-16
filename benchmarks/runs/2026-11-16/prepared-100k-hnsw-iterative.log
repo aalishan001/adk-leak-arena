@@ -1,0 +1,9 @@
+leak-arena prepared: namespace arena_run_9738e150ac7c: 100000 rows/table loaded
+leak-arena prepared: HNSW built (118527.4 ms)
+leak-arena prepared: exact authorized top-10 for alice_analyst: 10 rows
+leak-arena prepared: connections use hnsw.iterative_scan=relaxed_order
+leak-arena prepared: unprotected [default]: min recall 1.0, generic plans 0, empty results 0/20, plan Index Scan using idx_memories_unprotected_embedding_hnsw, rows removed by filter 427
+leak-arena prepared: memshield [default]: min recall 1.0, generic plans 0, empty results 0/20, plan Bitmap Heap Scan, rows removed by filter 16193
+leak-arena prepared: memshield_unpinned [default]: min recall 1.0, generic plans 0, empty results 0/20, plan Bitmap Heap Scan, rows removed by filter 16193
+leak-arena prepared: memshield [rls_only]: min recall 1.0, generic plans 0, empty results 0/20, plan Index Scan using idx_memories_embedding_hnsw, rows removed by filter 412
+leak-arena prepared: memshield_unpinned [rls_only]: min recall 1.0, generic plans 0, empty results 0/20, plan Index Scan using idx_memories_embedding_hnsw, rows removed by filter 412
