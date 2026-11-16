@@ -1,0 +1,24 @@
+# command: python -m pytest -q -p no:cacheprovider
+# date: 2026-11-16T14:27:09Z
+# adk-leak-arena 0.2.1
+# adk-memshield 0.2.0
+# google-adk 2.14.1
+# psycopg 3.3.9
+# qdrant-client 1.20.0
+# mem0ai 2.2.1
+# fastembed 0.9.1
+# python 3.12.15
+# PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu
+# pgvector 0.8.7
+# qdrant server 1.20.0
+
+/usr/local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+..................................................................       [100%]
+66 passed in 61.50s (0:01:01)
+error connecting in 'pool-11': connection failed: connection to server at "127.0.0.1", port 9 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+
+# exit code: 0

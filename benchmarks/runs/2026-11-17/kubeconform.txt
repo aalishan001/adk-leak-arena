@@ -1,0 +1,7 @@
+# date: 2026-11-16T14:26:41Z
+kustomize v5.8.3 build deploy/overlays/dev: exit 0
+kustomize v5.8.3 build deploy/overlays/production: exit 0
+== kubeconform v0.8.0 -strict -summary -kubernetes-version 1.33.0 (overlays/dev)
+Summary: 11 resources found in 1 file - Valid: 11, Invalid: 0, Errors: 0, Skipped: 0
+== kubeconform v0.8.0 -strict -summary -kubernetes-version 1.33.0 (overlays/production)
+Summary: 5 resources found in 1 file - Valid: 5, Invalid: 0, Errors: 0, Skipped: 0
