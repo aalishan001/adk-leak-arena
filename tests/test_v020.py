@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -283,3 +284,66 @@ def test_public_mode_is_read_only() -> None:
         # Attacks (searches) still run.
         assert tc.post("/api/attack", json={"preset_id": "S1", "query": "What are the AWS KMS keys?"}).status_code == 200
         assert "applyPublicMode" in tc.get("/").text
+
+
+# ----------------------------------------------------------------------------- deployment
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_health_and_readiness_probes(client: TestClient) -> None:
+    assert client.get("/healthz").json() == {"status": "ok"}
+    ready = client.get("/readyz")
+    assert ready.status_code == 200 and ready.json()["status"] == "ready"
+    broken = create_app(ArenaConfig(startup_baseline=False, db_dsn="postgresql://nobody:x@127.0.0.1:9/none"))
+    with TestClient(broken) as tc:
+        assert tc.get("/readyz").status_code == 503
+        assert tc.get("/healthz").status_code == 200
+
+
+def test_seed_command(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli_main(["seed"]) == EXIT_OK
+    info = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert isinstance(info, dict)
+
+
+def test_web_deployment_is_single_replica_without_secrets() -> None:
+    deploy = (ROOT / "deploy" / "base" / "deployment.yaml").read_text(encoding="utf-8")
+    # Run history and the benchmark slot are in process memory: exactly one pod, never two.
+    assert "\n  replicas: 1\n" in deploy and "type: Recreate" in deploy
+    assert "/readyz" in deploy and "/healthz" in deploy and "runAsNonRoot: true" in deploy
+    for path in (ROOT / "deploy").rglob("*.yaml"):
+        text = path.read_text(encoding="utf-8")
+        assert "kind: Secret\n" not in text, path  # secrets are references only
+        assert "postgres_admin_pass" not in text, path
+    assert "deploy/overlays/dev/dev.env" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+# ----------------------------------------------------------------------------- prepared mode
+def test_startup_option_is_percent_encoded() -> None:
+    from adk_leak_arena.config import with_search_path
+    from adk_leak_arena.prepared import _with_startup_option
+
+    dsn = with_search_path("postgresql://u:p@h:5432/db", "arena_run_abc")
+    out = _with_startup_option(dsn, "hnsw.iterative_scan=relaxed_order")
+    assert "+" not in out.split("?", 1)[1]
+    assert "options=-csearch_path%3Darena_run_abc%2Cpublic%20-chnsw.iterative_scan%3Drelaxed_order" in out
+
+
+def test_prepared_mode_pins_custom_plans() -> None:
+    from adk_leak_arena.prepared import run_prepared_mode
+
+    report = run_prepared_mode(ArenaConfig(), seed_size=1000, repeats=12, top_k=10,
+                               targets=("memshield", "memshield_unpinned"))
+    rows = {(r["target"], r["shape"]): r for r in report["results"]}
+    assert set(rows) == {("memshield", "default"), ("memshield_unpinned", "default"),
+                         ("memshield", "rls_only"), ("memshield_unpinned", "rls_only")}
+    for r in rows.values():
+        assert r["leaked_rows"] == 0
+        assert r["executions"] == 12 and r["explain"]["scan"]
+    # memshield 0.2.0 pins force_custom_plan: PostgreSQL never switches to a generic plan.
+    assert rows[("memshield", "default")]["generic_plans"] == 0
+    assert rows[("memshield", "rls_only")]["generic_plans"] == 0
+    assert rows[("memshield", "default")]["min_recall"] == 1.0
+    with psycopg.connect(ArenaConfig().admin_dsn) as conn:
+        left = conn.execute("SELECT count(*) FROM pg_namespace WHERE nspname = %s", (report["namespace"],)).fetchone()[0]
+    assert left == 0

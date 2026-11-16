@@ -96,7 +96,7 @@ def test_ui_and_state_endpoints(client: TestClient) -> None:
     assert state["default_scenario_ids"] == ["S1", "S2", "S3", "S4", "S5", "S6", "CONTROL"]
     assert state["attack_ids"] == ["S1", "S2", "S3", "S4", "S5", "S7", "S8", "S9"]
     assert state["top_k_options"] == [1, 3, 5, 10, 20]
-    assert state["seed_size_options"] == [36, 250, 500, 1000, 2000]
+    assert state["seed_size_options"] == [36, 250, 500, 1000, 2000, 10000, 100000]
     assert len(state["personas"]) == 3  # alice_analyst, exec_agent, orion_analyst (S7)
     assert len(state["seed_records"]) == len(SEED_RECORDS)
     assert "KMS-ROOT-8821-OMEGA" in state["canary_tokens"]
