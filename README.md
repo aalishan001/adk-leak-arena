@@ -72,7 +72,7 @@ Then open [http://localhost:8090](http://localhost:8090). Compose starts `adk_le
 ### Container image
 
 ```bash
-docker pull ghcr.io/aalishan001/adk-leak-arena:0.2.0
+docker pull ghcr.io/aalishan001/adk-leak-arena:0.2.1
 ```
 
 `linux/amd64` and `linux/arm64`, runs as uid 10001. Kubernetes manifests, the one-replica rule and a Cloud Run command are in [`deploy/README.md`](deploy/README.md).
@@ -364,7 +364,7 @@ When a completed run used `seed_size > 36`, its synthetic rows are removed after
 
 While a job runs, `/api/reset`, `/api/scale` and `/api/inject` return `409`. `/api/attack` still works and reports `benchmark_running: true`.
 
-With `ARENA_PUBLIC_MODE=1` the console is read-only: `/api/inject`, `/api/reset`, `/api/scale`, the benchmark endpoints and `DELETE /api/history` return `403`, and their controls are hidden. Attacks still run, restricted to the `deterministic_agent` engine and the PostgreSQL targets (`unprotected`, `memshield`, `memshield_unpinned`); S6 and S7, which plant fixture rows, are not offered. Use it for any public deployment. The web process still holds the admin DSN for its first-request seeding; give it a role that owns only the arena schema.
+With `ARENA_PUBLIC_MODE=1` the console is read-only: `/api/inject`, `/api/reset`, `/api/scale`, the benchmark endpoints and `DELETE /api/history` return `403`, and their controls are hidden. Attacks still run, restricted to the `deterministic_agent` engine and the PostgreSQL targets (`unprotected`, `memshield`, `memshield_unpinned`); S6 and S7, which plant fixture rows, are not offered. Use it for any public deployment. A public console never holds the admin login: it refuses to start if `ARENA_ADMIN_DSN` is set or if its application role is a superuser, has `BYPASSRLS` or owns an arena table; it never seeds, and `/readyz` returns 503 until `leak-arena seed` has run elsewhere with the admin DSN (a Kubernetes or Cloud Run job).
 
 ### Other endpoints
 

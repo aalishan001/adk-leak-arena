@@ -29,3 +29,16 @@ patches:
       - op: add
         path: /data/ARENA_QDRANT_URL
         value: http://adk-leak-arena-qdrant:6333
+  # Dev runs with public mode off (inject, reset, benchmark jobs), which needs the admin DSN.
+  - target:
+      kind: Deployment
+      name: adk-leak-arena
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARENA_ADMIN_DSN
+          valueFrom:
+            secretKeyRef:
+              name: adk-leak-arena-db
+              key: ARENA_ADMIN_DSN

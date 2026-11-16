@@ -3,7 +3,7 @@
 The container image is published to GHCR by the release workflow for `linux/amd64` and `linux/arm64`:
 
 ```
-ghcr.io/aalishan001/adk-leak-arena:0.2.0
+ghcr.io/aalishan001/adk-leak-arena:0.2.1
 ghcr.io/aalishan001/adk-leak-arena:latest
 ```
 
@@ -14,7 +14,7 @@ It runs `leak-arena serve` on port 8090 as an unprivileged user (uid 10001) and 
 | Variable | Purpose |
 | --- | --- |
 | `ARENA_DB_DSN` / `MEMSHIELD_DB_DSN` | Application role (`memshield_app`: `NOSUPERUSER`, `NOBYPASSRLS`). Every measured read uses it. |
-| `ARENA_ADMIN_DSN` | Schema owner. Used by `leak-arena seed`, synthetic stress loads and per-run schemas. |
+| `ARENA_ADMIN_DSN` | Schema owner. Used by `leak-arena seed`, synthetic stress loads and per-run schemas. **Only the seed job gets it in a public deployment:** with `ARENA_PUBLIC_MODE=1` the web process refuses to start if it is set. |
 | `ARENA_PUBLIC_MODE` | `1` = read-only console: attacks run (deterministic engine, PostgreSQL targets, no fixture-planting S6/S7); inject, reset, rescale, benchmark jobs and history deletion return 403 and are hidden. Use it for any public deployment. |
 | `ARENA_STARTUP_BASELINE` | `1` runs a baseline benchmark at startup to fill the history panel. |
 | `ARENA_QDRANT_URL` | Qdrant endpoint for the `qdrant` and `mem0` targets (default `http://localhost:56333`; set in the dev overlay). Unused in public mode, which offers only the PostgreSQL targets. |
@@ -35,7 +35,7 @@ deploy/
   overlays/production/  base only: points at managed PostgreSQL through a Secret
 ```
 
-No secret is stored in the repository. The workloads read the Secret `adk-leak-arena-db` (keys `ARENA_DB_DSN`, `ARENA_ADMIN_DSN`) and, optionally, `adk-leak-arena-gemini` (`GEMINI_API_KEY`).
+No secret is stored in the repository. The workloads read the Secret `adk-leak-arena-db` (keys `ARENA_DB_DSN`, `ARENA_ADMIN_DSN`) and, optionally, `adk-leak-arena-gemini` (`GEMINI_API_KEY`). In the base (public mode on), the web Deployment receives only `ARENA_DB_DSN`; `ARENA_ADMIN_DSN` goes to the seed Job alone. In public mode the web process also refuses an application role that is a superuser, has `BYPASSRLS` or owns an arena table, never seeds, and reports not-ready until the seed Job has run. The dev overlay turns public mode off and gives the web Deployment the admin DSN back (inject, reset and benchmark jobs need it).
 
 Development cluster:
 
@@ -66,14 +66,23 @@ Cloud Run pulls images from Artifact Registry, so mirror the GHCR image through 
 
 ```bash
 gcloud run deploy adk-leak-arena \
-  --image=REGION-docker.pkg.dev/PROJECT/ghcr-remote/aalishan001/adk-leak-arena:0.2.0 \
+  --image=REGION-docker.pkg.dev/PROJECT/ghcr-remote/aalishan001/adk-leak-arena:0.2.1 \
   --region=REGION \
   --port=8090 --cpu=2 --memory=4Gi \
   --min-instances=0 --max-instances=1 --concurrency=20 \
   --add-cloudsql-instances=PROJECT:REGION:INSTANCE \
   --set-env-vars=ARENA_PUBLIC_MODE=1,ARENA_STARTUP_BASELINE=0,ARENA_STATE_DIR=/tmp/adk-leak-arena \
-  --set-secrets=ARENA_DB_DSN=arena-db-dsn:latest,MEMSHIELD_DB_DSN=arena-db-dsn:latest,ARENA_ADMIN_DSN=arena-admin-dsn:latest \
+  --set-secrets=ARENA_DB_DSN=arena-db-dsn:latest,MEMSHIELD_DB_DSN=arena-db-dsn:latest \
   --allow-unauthenticated
 ```
 
-With the Cloud SQL connector the DSN host is the socket directory, for example `postgresql://memshield_app:<password>@/<db>?host=/cloudsql/PROJECT:REGION:INSTANCE`. Seed once with a Cloud Run job running `leak-arena seed` and the same secrets.
+With the Cloud SQL connector the DSN host is the socket directory, for example `postgresql://memshield_app:<password>@/<db>?host=/cloudsql/PROJECT:REGION:INSTANCE`. The service gets only the application DSN. Seed once, before the service becomes ready, with a Cloud Run job that alone holds the admin DSN:
+
+```bash
+gcloud run jobs create adk-leak-arena-seed \
+  --image=REGION-docker.pkg.dev/PROJECT/ghcr-remote/aalishan001/adk-leak-arena:0.2.1 \
+  --region=REGION --command=leak-arena --args=seed \
+  --add-cloudsql-instances=PROJECT:REGION:INSTANCE \
+  --set-secrets=ARENA_DB_DSN=arena-db-dsn:latest,ARENA_ADMIN_DSN=arena-admin-dsn:latest
+gcloud run jobs execute adk-leak-arena-seed --region=REGION --wait
+```

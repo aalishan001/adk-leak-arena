@@ -39,8 +39,9 @@ spec:
             - configMapRef:
                 name: adk-leak-arena-config
           env:
-            # Secret with keys ARENA_DB_DSN (memshield_app role, NOBYPASSRLS) and
-            # ARENA_ADMIN_DSN (schema owner, used for seeding and synthetic loads).
+            # Only the application role (memshield_app: NOSUPERUSER, NOBYPASSRLS, owns no
+            # table). Public mode refuses to start with ARENA_ADMIN_DSN or an RLS-bypassing
+            # role; the seed Job is the only workload that gets the admin DSN.
             - name: ARENA_DB_DSN
               valueFrom:
                 secretKeyRef:
@@ -51,11 +52,6 @@ spec:
                 secretKeyRef:
                   name: adk-leak-arena-db
                   key: ARENA_DB_DSN
-            - name: ARENA_ADMIN_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: adk-leak-arena-db
-                  key: ARENA_ADMIN_DSN
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -13,4 +13,4 @@ resources:
 images:
   - name: adk-leak-arena
     newName: ghcr.io/aalishan001/adk-leak-arena
-    newTag: "0.2.0"
+    newTag: "0.2.1"
