@@ -1,5 +1,5 @@
 # command: python -m pytest -q -p no:cacheprovider
-# date: 2026-11-16T11:43:13Z
+# date: 2026-11-16T12:50:06Z
 # adk-leak-arena 0.2.0
 # adk-memshield 0.2.0
 # google-adk 2.14.1
@@ -17,6 +17,6 @@ The event loop scope for asynchronous fixtures will default to the fixture scope
 
   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
 ................................................................         [100%]
-64 passed in 41.29s
+64 passed in 32.92s
 
 # exit code: 0

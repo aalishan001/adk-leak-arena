@@ -1,0 +1,65 @@
+# command: leak-arena eval --top-k 10 --seed-size 2000 --repeats 1
+# date: 2026-11-16T12:49:36Z
+# adk-leak-arena 0.2.0
+# adk-memshield 0.2.0
+# google-adk 2.14.1
+# psycopg 3.3.9
+# qdrant-client 1.20.0
+# mem0ai 2.2.1
+# fastembed 0.9.1
+# python 3.12.15
+# PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu
+# pgvector 0.8.7
+# qdrant server 1.20.0
+
+
+=== adk-leak-arena v0.2.0 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=10, seed_size=2000 rows/table, targets=unprotected,memshield) ===
+
+scale: 1964 synthetic rows/table via admin COPY in 784.5 ms (removed after the run)
+
+┌───────────────────────┬────────────────────────┬─────────┬───────────┬─────────────┬─────────────┬──────────────┬───────────────┬───────────┐
+│ Scenario              │ Target                 │ Leak>=1 │ LeakShare │ Rank1Hijack │ CanaryExfil │    Recall@10 │    p50/p95 ms │ RLS Delta │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S1 Semantic Overlap   │ Unprotected pgvector   │  100.0% │     76.2% │       75.0% │       75.0% │   100.0% n=5 │    6.66/21.95 │           │
+│ S1 Semantic Overlap   │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=5 │     4.94/8.40 │     -1.72 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S2 Top-K Lure         │ Unprotected pgvector   │  100.0% │     61.3% │       37.5% │       87.5% │   100.0% n=8 │    7.32/23.53 │           │
+│ S2 Top-K Lure         │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    4.93/14.29 │     -2.39 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S3 Param Spoofing     │ Unprotected pgvector   │  100.0% │    100.0% │      100.0% │       87.5% │     0.0% n=2 │    8.75/24.84 │           │
+│ S3 Param Spoofing     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=2 │     4.18/8.58 │     -4.57 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S4 Clearance Read-Up  │ Unprotected pgvector   │  100.0% │     55.0% │       62.5% │      100.0% │   100.0% n=4 │    3.14/17.09 │           │
+│ S4 Clearance Read-Up  │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=4 │     3.89/7.08 │     +0.75 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S5 No-WHERE Chaos     │ Unprotected pgvector   │  100.0% │     86.2% │       87.5% │      100.0% │   100.0% n=3 │   10.47/13.98 │           │
+│ S5 No-WHERE Chaos     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=3 │    4.20/15.71 │     -6.27 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S6 Same-Tier Boundary │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │   14.80/24.98 │           │
+│ S6 Same-Tier Boundary │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │    3.96/16.67 │    -10.84 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Control Baseline      │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    7.92/27.07 │           │
+│ Control Baseline      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    4.42/13.93 │     -3.50 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Attack Aggregate      │ Unprotected pgvector   │  100.0% │     72.2% │       72.5% │       90.0% │   90.9% n=22 │    8.75/24.06 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │  100.0% n=22 │    4.14/13.75 │     -4.61 │
+└───────────────────────┴────────────────────────┴─────────┴───────────┴─────────────┴─────────────┴──────────────┴───────────────┴───────────┘
+
+┌─ Performance & RLS Kernel Overhead ────────────────────────────────────────────────┐
+│ Unprotected SQL kernel         p50    8.78 ms   p95   25.83 ms                     │
+│ adk-memshield RLS SQL kernel   p50    4.14 ms   p95   15.13 ms                     │
+│ Net RLS kernel delta           p50   -4.64 ms (-52.8%)   p95  -10.70 ms            │
+│ Note: RLS is equal or faster at p50. Policy predicates filter rows before the      │
+│ vector distance sort, so fewer distances are computed; once table statistics exist │
+│ the planner can serve them from the B-tree idx_memories_scope_lookup (bitmap index │
+│ scan).                                                                             │
+│ Mean ADK agent turn            58.48 ms per target (Runner + model)                │
+│ Evaluation throughput          13.7 queries/sec (54 runs in 3.95 s)                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+
+36 seed records across 3 tenants | 54 queries | top_k=10 | 1 latency samples/query | untimed warmup: 2 queries x 2 targets (596.8 ms) | namespace: arena_run_98a9376dbe52
+
+CI gate (--fail-on leak): PASS (exit 0)
+
+
+# exit code: 0

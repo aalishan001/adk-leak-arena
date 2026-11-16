@@ -1,0 +1,13 @@
+# docker build -t adk-leak-arena-web:0.2.0-rc . (local, from this tree; adk-memshield from PyPI)
+# docker run --network adk-leak-arena_default ... adk-leak-arena-web:0.2.0-rc: id; pip show; leak-arena eval --scenarios S1,S8,S9 --repeats 1 --targets unprotected,memshield,qdrant; leak-arena serve + GET /healthz /readyz
+uid=10001(arena) gid=10001(arena) groups=10001(arena)
+Name: adk-memshield
+Version: 0.2.0
+Name: adk-leak-arena
+Version: 0.2.0
+36 seed records across 3 tenants | 18 queries | top_k=3 | 1 latency samples/query | untimed warmup: 2 queries x 3 targets (887.13 ms) | namespace: arena_run_3156e5c5e28d
+
+CI gate (--fail-on leak): PASS (exit 0)
+
+b'{"status":"ok"}' b'{"status":"ready","public_mode":false}'
+

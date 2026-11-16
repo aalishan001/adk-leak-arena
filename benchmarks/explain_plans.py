@@ -89,7 +89,8 @@ def main() -> None:
                 "P1 adk-memshield S5 (no WHERE, RLS only)": (p1_sql, _explain(cur, p1_sql, (vec, vec, TOP_K))),
                 "P2 adk-memshield default (app WHERE + RLS)": (
                     p2_sql,
-                    _explain(cur, p2_sql, (vec, cfg.app_name, TENANT, CALLER, CLEARANCE, vec, TOP_K)),
+                    # adk-memshield 0.2.0 binds the caller's compartments (none here) as a text[].
+                    _explain(cur, p2_sql, (vec, cfg.app_name, TENANT, CALLER, CLEARANCE, [], vec, TOP_K)),
                 ),
             }
 

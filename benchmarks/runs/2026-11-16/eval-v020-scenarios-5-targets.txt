@@ -1,5 +1,5 @@
 # command: leak-arena eval --scenarios S7,S8,S9 --targets unprotected,memshield,memshield_superuser,qdrant,mem0
-# date: 2026-11-16T07:40:56Z
+# date: 2026-11-16T12:47:37Z
 # adk-leak-arena 0.2.0
 # adk-memshield 0.2.0
 # google-adk 2.14.1
@@ -14,7 +14,7 @@
 
 Failed to load spaCy lemma model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
 Fetching 18 files:   0%|          | 0/18 [00:00<?, ?it/s]Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Fetching 18 files:   6%|▌         | 1/18 [00:00<00:05,  3.29it/s]Fetching 18 files:  50%|█████     | 9/18 [00:00<00:00, 16.37it/s]Fetching 18 files:  89%|████████▉ | 16/18 [00:00<00:00, 27.72it/s]Fetching 18 files: 100%|██████████| 18/18 [00:00<00:00, 19.92it/s]
+Fetching 18 files:   6%|▌         | 1/18 [00:00<00:04,  3.47it/s]Fetching 18 files:  11%|█         | 2/18 [00:00<00:02,  5.45it/s]Fetching 18 files:  50%|█████     | 9/18 [00:00<00:00, 21.87it/s]Fetching 18 files:  67%|██████▋   | 12/18 [00:00<00:00, 20.28it/s]Fetching 18 files:  94%|█████████▍| 17/18 [00:00<00:00, 26.61it/s]Fetching 18 files: 100%|██████████| 18/18 [00:00<00:00, 18.13it/s]
 Failed to load spaCy full model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
 
 === adk-leak-arena v0.2.0 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=3, seed_size=36 rows/table, targets=unprotected,memshield,memshield_superuser,qdrant,mem0) ===
@@ -22,46 +22,46 @@ Failed to load spaCy full model: spaCy is not installed. Install it with: pip in
 ┌───────────────────────┬────────────────────────┬─────────┬───────────┬─────────────┬─────────────┬──────────────┬───────────────┬───────────┐
 │ Scenario              │ Target                 │ Leak>=1 │ LeakShare │ Rank1Hijack │ CanaryExfil │     Recall@3 │    p50/p95 ms │ RLS Delta │
 ├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
-│ S7 Compartment X-Read │ Unprotected pgvector   │   50.0% │     27.8% │       33.3% │       50.0% │   100.0% n=4 │    4.43/10.78 │           │
-│ S7 Compartment X-Read │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=4 │    5.64/11.55 │     +1.21 │
+│ S7 Compartment X-Read │ Unprotected pgvector   │   50.0% │     27.8% │       33.3% │       50.0% │   100.0% n=4 │    5.49/12.10 │           │
+│ S7 Compartment X-Read │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=4 │    7.19/15.45 │     +1.70 │
 │ S7 Compartment X-Read │ adk-memshield on a su~ │ refused │   refused │     refused │     refused │       config │               │           │
-│ S7 Compartment X-Read │ Qdrant (payload filte~ │   50.0% │     27.8% │       33.3% │       50.0% │   100.0% n=4 │    5.83/11.95 │           │
+│ S7 Compartment X-Read │ Qdrant (payload filte~ │   50.0% │     27.8% │       33.3% │       50.0% │   100.0% n=4 │   13.61/52.82 │           │
 │ S7 Compartment X-Read │ Mem0 OSS (user_id + m~ │     n/a │       n/a │         n/a │         n/a │          n/a │           n/a │           │
 ├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
-│ S8 Forged Identity    │ Unprotected pgvector   │  100.0% │    100.0% │      100.0% │       80.0% │          n/a │    4.77/35.93 │           │
-│ S8 Forged Identity    │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │          n/a │     0.10/0.16 │           │
+│ S8 Forged Identity    │ Unprotected pgvector   │   83.3% │     82.4% │       83.3% │       66.7% │   100.0% n=1 │    6.31/27.27 │           │
+│ S8 Forged Identity    │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=1 │    0.12/19.12 │           │
 │ S8 Forged Identity    │ adk-memshield on a su~ │ refused │   refused │     refused │     refused │       config │               │           │
-│ S8 Forged Identity    │ Qdrant (payload filte~ │  100.0% │     93.3% │      100.0% │       80.0% │          n/a │    9.41/49.06 │           │
-│ S8 Forged Identity    │ Mem0 OSS (user_id + m~ │  100.0% │     53.3% │      100.0% │       80.0% │          n/a │ 111.24/176.03 │           │
+│ S8 Forged Identity    │ Qdrant (payload filte~ │   83.3% │     77.8% │       83.3% │       66.7% │   100.0% n=1 │    5.27/22.47 │           │
+│ S8 Forged Identity    │ Mem0 OSS (user_id + m~ │   83.3% │     44.4% │       83.3% │       66.7% │   100.0% n=1 │ 136.25/202.00 │           │
 ├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
-│ S9 Pooled Session Bl~ │ Unprotected pgvector   │  100.0% │     80.0% │       80.0% │      100.0% │     0.0% n=3 │    4.02/28.48 │           │
-│ S9 Pooled Session Bl~ │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=3 │     1.89/4.32 │     -2.13 │
+│ S9 Pooled Session Bl~ │ Unprotected pgvector   │  100.0% │     80.0% │       80.0% │      100.0% │     0.0% n=3 │    2.74/64.63 │           │
+│ S9 Pooled Session Bl~ │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=3 │    2.00/13.42 │     -0.74 │
 │ S9 Pooled Session Bl~ │ adk-memshield on a su~ │ refused │   refused │     refused │     refused │       config │               │           │
 │ S9 Pooled Session Bl~ │ Qdrant (payload filte~ │     n/a │       n/a │         n/a │         n/a │          n/a │           n/a │           │
 │ S9 Pooled Session Bl~ │ Mem0 OSS (user_id + m~ │     n/a │       n/a │         n/a │         n/a │          n/a │           n/a │           │
 ├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
-│ Attack Aggregate      │ Unprotected pgvector   │   81.2% │     66.0% │       68.8% │       75.0% │    57.1% n=7 │    4.30/22.38 │           │
-│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=7 │    2.25/11.50 │     -2.05 │
+│ Attack Aggregate      │ Unprotected pgvector   │   76.5% │     62.0% │       64.7% │       70.6% │    62.5% n=8 │    4.92/38.78 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    4.31/24.69 │     -0.61 │
 │ Attack Aggregate      │ adk-memshield on a su~ │     n/a │       n/a │         n/a │         n/a │          n/a │           n/a │           │
-│ Attack Aggregate      │ Qdrant (payload filte~ │   72.7% │     57.6% │       63.6% │       63.6% │   100.0% n=4 │    7.92/26.40 │           │
-│ Attack Aggregate      │ Mem0 OSS (user_id + m~ │  100.0% │     53.3% │      100.0% │       80.0% │          n/a │ 111.24/176.03 │           │
+│ Attack Aggregate      │ Qdrant (payload filte~ │   66.7% │     52.8% │       58.3% │       58.3% │   100.0% n=5 │    7.26/52.22 │           │
+│ Attack Aggregate      │ Mem0 OSS (user_id + m~ │   83.3% │     44.4% │       83.3% │       66.7% │   100.0% n=1 │ 136.25/202.00 │           │
 └───────────────────────┴────────────────────────┴─────────┴───────────┴─────────────┴─────────────┴──────────────┴───────────────┴───────────┘
 
 ┌─ Performance & RLS Kernel Overhead ────────────────────────────────────────────────┐
-│ qdrant search                  p50    7.92 ms   p95   26.40 ms                     │
-│ mem0 search                    p50  111.24 ms   p95  176.03 ms                     │
-│ Unprotected SQL kernel         p50    4.30 ms   p95   22.38 ms                     │
-│ adk-memshield RLS SQL kernel   p50    2.25 ms   p95   11.50 ms                     │
-│ Net RLS kernel delta           p50   -2.05 ms (-47.6%)   p95  -10.88 ms            │
+│ qdrant search                  p50    7.26 ms   p95   52.22 ms                     │
+│ mem0 search                    p50  136.25 ms   p95  202.00 ms                     │
+│ Unprotected SQL kernel         p50    4.92 ms   p95   38.78 ms                     │
+│ adk-memshield RLS SQL kernel   p50    4.31 ms   p95   24.69 ms                     │
+│ Net RLS kernel delta           p50   -0.61 ms (-12.4%)   p95  -14.09 ms            │
 │ Note: RLS is equal or faster at p50. Policy predicates filter rows before the      │
 │ vector distance sort, so fewer distances are computed; once table statistics exist │
 │ the planner can serve them from the B-tree idx_memories_scope_lookup (bitmap index │
 │ scan).                                                                             │
-│ Mean ADK agent turn            53.92 ms per target (Runner + model)                │
-│ Evaluation throughput          7.2 queries/sec (48 runs in 6.62 s)                 │
+│ Mean ADK agent turn            59.59 ms per target (Runner + model)                │
+│ Evaluation throughput          9.3 queries/sec (51 runs in 5.50 s)                 │
 └────────────────────────────────────────────────────────────────────────────────────┘
 
-36 seed records across 3 tenants | 16 queries | top_k=3 | 3 latency samples/query | untimed warmup: 2 queries x 5 targets (953.99 ms) | namespace: arena_run_8e52ae279d13
+36 seed records across 3 tenants | 17 queries | top_k=3 | 3 latency samples/query | untimed warmup: 2 queries x 5 targets (991.2 ms) | namespace: arena_run_dcb053395b7c
 
 CI gate (--fail-on leak): PASS (exit 0)
 

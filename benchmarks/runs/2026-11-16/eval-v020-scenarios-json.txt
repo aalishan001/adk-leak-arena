@@ -1,0 +1,553 @@
+# command: leak-arena eval --scenarios S7,S8,S9 --format json --targets unprotected,memshield,memshield_superuser,qdrant,mem0
+# date: 2026-11-16T12:49:15Z
+# adk-leak-arena 0.2.0
+# adk-memshield 0.2.0
+# google-adk 2.14.1
+# psycopg 3.3.9
+# qdrant-client 1.20.0
+# mem0ai 2.2.1
+# fastembed 0.9.1
+# python 3.12.15
+# PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu
+# pgvector 0.8.7
+# qdrant server 1.20.0
+
+Failed to load spaCy lemma model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+Failed to load spaCy full model: spaCy is not installed. Install it with: pip install mem0ai[nlp]
+{
+  "caller_id": "alice_analyst",
+  "engine": "deterministic_agent",
+  "top_k": 3,
+  "seed_size": 36,
+  "elapsed_ms": 6450.1,
+  "steps_completed": 53,
+  "total_steps": 53,
+  "targets": [
+    {
+      "name": "unprotected",
+      "label": "Unprotected pgvector",
+      "protected": false,
+      "version": "",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": true,
+        "database_enforced": false
+      }
+    },
+    {
+      "name": "memshield",
+      "label": "adk-memshield (RLS)",
+      "protected": true,
+      "version": "0.2.0",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": true,
+        "database_enforced": true
+      }
+    },
+    {
+      "name": "memshield_superuser",
+      "label": "adk-memshield on a superuser DSN",
+      "protected": true,
+      "version": "0.2.0",
+      "expects_refusal": true,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": true,
+        "database_enforced": true
+      }
+    },
+    {
+      "name": "qdrant",
+      "label": "Qdrant (payload filters)",
+      "protected": false,
+      "version": "qdrant 1.20.0",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": false,
+        "database_enforced": false
+      }
+    },
+    {
+      "name": "mem0",
+      "label": "Mem0 OSS (user_id + metadata filters)",
+      "protected": false,
+      "version": "mem0ai 2.2.1",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": false,
+        "sql_session": false,
+        "database_enforced": false
+      }
+    }
+  ],
+  "methodology": {
+    "seed_records": 36,
+    "seed_size": 36,
+    "tenants": [
+      "acme_corp",
+      "globex_inc",
+      "initech_labs"
+    ],
+    "top_k": 3,
+    "targets": [
+      "unprotected",
+      "memshield",
+      "memshield_superuser",
+      "qdrant",
+      "mem0"
+    ],
+    "namespace": "arena_run_0ea496555c47",
+    "scenarios": [
+      "S7",
+      "S8",
+      "S9"
+    ],
+    "queries_per_scenario": {
+      "S7": 6,
+      "S8": 6,
+      "S9": 5
+    },
+    "latency_repeats_per_query": 3,
+    "warmup": {
+      "queries": 2,
+      "targets": [
+        "unprotected",
+        "memshield",
+        "memshield_superuser",
+        "qdrant",
+        "mem0"
+      ],
+      "elapsed_ms": 1055.41
+    },
+    "latency_definition": "Wall time of the target's search call (for PostgreSQL targets: pooled connection checkout + transaction + search SQL, adk-memshield including its set_config round-trip; for Qdrant: the client search call), query embedding excluded; for Mem0: the arena adapter's two Mem0 searches, which embed the query themselves, so embedding is included.",
+    "recall_definition": "Recall@K over queries whose relevant seed records include at least one the caller may read; pure cross-user/cross-tenant exfiltration probes are excluded.",
+    "boundary_definition": "S6 is reported separately: authorized same-tier shared rows written by an adversary are retrieved by every correctly filtered target and excluded from the attack aggregate.",
+    "not_applicable": "A target that cannot express a scenario's application mistake through its own API reports n/a for that scenario and is left out of its aggregate."
+  },
+  "scenarios": [
+    {
+      "id": "S7",
+      "short_label": "S7: Compartment Read-Across",
+      "title": "Scenario 7 \u2014 Compartment (Need-to-Know) Read-Across",
+      "vulnerability_class": "CWE-285: Missing Department / Compartment Filter",
+      "failure_mode": "missing_compartment_filter",
+      "simulate_missing_app_filter": false,
+      "boundary": false,
+      "targets": {
+        "unprotected": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 50.0,
+          "leaked_row_share_pct": 27.8,
+          "rank_1_hijack_pct": 33.3,
+          "canary_exfiltration_pct": 50.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 4,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 4.81,
+          "p95_latency_ms": 14.93,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 0.0,
+          "leaked_row_share_pct": 0.0,
+          "rank_1_hijack_pct": 0.0,
+          "canary_exfiltration_pct": 0.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 4,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 10.67,
+          "p95_latency_ms": 16.08,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield_superuser": {
+          "applicable": false,
+          "configuration_refused": true,
+          "reason": "adk-memshield refused to run: refusing to run: role 'postgres' is a superuser, which bypasses row-level security; role 'postgres' has BYPASSRLS, which bypasses row-level security; role 'postgres' owns table 'memories' (or is a member of its owner role) and could disable row-level security or drop its policies at runtime. Connect as a NOSUPERUSER NOBYPASSRLS role (see sql/01_schema.sql) on a table with FORCE ROW LEVEL SECURITY."
+        },
+        "qdrant": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 50.0,
+          "leaked_row_share_pct": 27.8,
+          "rank_1_hijack_pct": 33.3,
+          "canary_exfiltration_pct": 50.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 4,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 9.89,
+          "p95_latency_ms": 36.15,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "mem0": {
+          "applicable": false
+        }
+      },
+      "unprotected": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 50.0,
+        "leaked_row_share_pct": 27.8,
+        "rank_1_hijack_pct": 33.3,
+        "canary_exfiltration_pct": 50.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 4,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 18,
+        "p50_latency_ms": 4.81,
+        "p95_latency_ms": 14.93,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "memshield": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 0.0,
+        "leaked_row_share_pct": 0.0,
+        "rank_1_hijack_pct": 0.0,
+        "canary_exfiltration_pct": 0.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 4,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 18,
+        "p50_latency_ms": 10.67,
+        "p95_latency_ms": 16.08,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "rls_delta_p50_ms": 5.86,
+      "rls_delta_p95_ms": 1.15
+    },
+    {
+      "id": "S8",
+      "short_label": "S8: Forged Identity vs Verified Token",
+      "title": "Scenario 8 \u2014 Tool Passes Another User's Id While a Verified Token Is Bound",
+      "vulnerability_class": "OWASP LLM07 / CWE-639: Authorization Bypass Through User-Controlled Key",
+      "failure_mode": "forged_identity",
+      "simulate_missing_app_filter": false,
+      "boundary": false,
+      "targets": {
+        "unprotected": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 83.3,
+          "leaked_row_share_pct": 82.4,
+          "rank_1_hijack_pct": 83.3,
+          "canary_exfiltration_pct": 66.7,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 1,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 6.05,
+          "p95_latency_ms": 39.79,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 0.0,
+          "leaked_row_share_pct": 0.0,
+          "rank_1_hijack_pct": 0.0,
+          "canary_exfiltration_pct": 0.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 1,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 0.11,
+          "p95_latency_ms": 9.28,
+          "applicable": true,
+          "identity_refusals": 5
+        },
+        "memshield_superuser": {
+          "applicable": false,
+          "configuration_refused": true,
+          "reason": "adk-memshield refused to run: refusing to run: role 'postgres' is a superuser, which bypasses row-level security; role 'postgres' has BYPASSRLS, which bypasses row-level security; role 'postgres' owns table 'memories' (or is a member of its owner role) and could disable row-level security or drop its policies at runtime. Connect as a NOSUPERUSER NOBYPASSRLS role (see sql/01_schema.sql) on a table with FORCE ROW LEVEL SECURITY."
+        },
+        "qdrant": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 83.3,
+          "leaked_row_share_pct": 77.8,
+          "rank_1_hijack_pct": 83.3,
+          "canary_exfiltration_pct": 66.7,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 1,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 11.11,
+          "p95_latency_ms": 29.35,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "mem0": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 83.3,
+          "leaked_row_share_pct": 44.4,
+          "rank_1_hijack_pct": 83.3,
+          "canary_exfiltration_pct": 66.7,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 1,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 18,
+          "p50_latency_ms": 129.93,
+          "p95_latency_ms": 190.95,
+          "applicable": true,
+          "identity_refusals": 0
+        }
+      },
+      "unprotected": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 83.3,
+        "leaked_row_share_pct": 82.4,
+        "rank_1_hijack_pct": 83.3,
+        "canary_exfiltration_pct": 66.7,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 1,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 18,
+        "p50_latency_ms": 6.05,
+        "p95_latency_ms": 39.79,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "memshield": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 0.0,
+        "leaked_row_share_pct": 0.0,
+        "rank_1_hijack_pct": 0.0,
+        "canary_exfiltration_pct": 0.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 1,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 18,
+        "p50_latency_ms": 0.11,
+        "p95_latency_ms": 9.28,
+        "applicable": true,
+        "identity_refusals": 5
+      }
+    },
+    {
+      "id": "S9",
+      "short_label": "S9: Pooled Session-Context Bleed",
+      "title": "Scenario 9 \u2014 Session-Level SET on a Pooled Connection Bleeds the Previous Caller",
+      "vulnerability_class": "CWE-488: Exposure of Data Element to Wrong Session",
+      "failure_mode": "pooled_session_bleed",
+      "simulate_missing_app_filter": false,
+      "boundary": false,
+      "targets": {
+        "unprotected": {
+          "queries_evaluated": 5,
+          "queries_leaking_pct": 100.0,
+          "leaked_row_share_pct": 80.0,
+          "rank_1_hijack_pct": 80.0,
+          "canary_exfiltration_pct": 100.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 3,
+          "authorized_recall_pct": 0.0,
+          "retrieval_errors": 0,
+          "latency_samples": 15,
+          "p50_latency_ms": 2.81,
+          "p95_latency_ms": 20.24,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield": {
+          "queries_evaluated": 5,
+          "queries_leaking_pct": 0.0,
+          "leaked_row_share_pct": 0.0,
+          "rank_1_hijack_pct": 0.0,
+          "canary_exfiltration_pct": 0.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 3,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 15,
+          "p50_latency_ms": 2.14,
+          "p95_latency_ms": 4.06,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield_superuser": {
+          "applicable": false,
+          "configuration_refused": true,
+          "reason": "adk-memshield refused to run: refusing to run: role 'postgres' is a superuser, which bypasses row-level security; role 'postgres' has BYPASSRLS, which bypasses row-level security; role 'postgres' owns table 'memories' (or is a member of its owner role) and could disable row-level security or drop its policies at runtime. Connect as a NOSUPERUSER NOBYPASSRLS role (see sql/01_schema.sql) on a table with FORCE ROW LEVEL SECURITY."
+        },
+        "qdrant": {
+          "applicable": false
+        },
+        "mem0": {
+          "applicable": false
+        }
+      },
+      "unprotected": {
+        "queries_evaluated": 5,
+        "queries_leaking_pct": 100.0,
+        "leaked_row_share_pct": 80.0,
+        "rank_1_hijack_pct": 80.0,
+        "canary_exfiltration_pct": 100.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 3,
+        "authorized_recall_pct": 0.0,
+        "retrieval_errors": 0,
+        "latency_samples": 15,
+        "p50_latency_ms": 2.81,
+        "p95_latency_ms": 20.24,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "memshield": {
+        "queries_evaluated": 5,
+        "queries_leaking_pct": 0.0,
+        "leaked_row_share_pct": 0.0,
+        "rank_1_hijack_pct": 0.0,
+        "canary_exfiltration_pct": 0.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 3,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 15,
+        "p50_latency_ms": 2.14,
+        "p95_latency_ms": 4.06,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "rls_delta_p50_ms": -0.67,
+      "rls_delta_p95_ms": -16.18
+    }
+  ],
+  "aggregate_attacks": {
+    "unprotected": {
+      "queries_evaluated": 17,
+      "queries_leaking_pct": 76.5,
+      "leaked_row_share_pct": 62.0,
+      "rank_1_hijack_pct": 64.7,
+      "canary_exfiltration_pct": 70.6,
+      "same_tier_poison_pct": 0.0,
+      "recall_eligible_queries": 8,
+      "authorized_recall_pct": 62.5,
+      "retrieval_errors": 0,
+      "latency_samples": 51,
+      "p50_latency_ms": 4.32,
+      "p95_latency_ms": 34.37
+    },
+    "memshield": {
+      "queries_evaluated": 17,
+      "queries_leaking_pct": 0.0,
+      "leaked_row_share_pct": 0.0,
+      "rank_1_hijack_pct": 0.0,
+      "canary_exfiltration_pct": 0.0,
+      "same_tier_poison_pct": 0.0,
+      "recall_eligible_queries": 8,
+      "authorized_recall_pct": 100.0,
+      "retrieval_errors": 0,
+      "latency_samples": 36,
+      "p50_latency_ms": 3.5,
+      "p95_latency_ms": 16.7
+    },
+    "qdrant": {
+      "queries_evaluated": 12,
+      "queries_leaking_pct": 66.7,
+      "leaked_row_share_pct": 52.8,
+      "rank_1_hijack_pct": 58.3,
+      "canary_exfiltration_pct": 58.3,
+      "same_tier_poison_pct": 0.0,
+      "recall_eligible_queries": 5,
+      "authorized_recall_pct": 100.0,
+      "retrieval_errors": 0,
+      "latency_samples": 36,
+      "p50_latency_ms": 10.25,
+      "p95_latency_ms": 31.62
+    },
+    "mem0": {
+      "queries_evaluated": 6,
+      "queries_leaking_pct": 83.3,
+      "leaked_row_share_pct": 44.4,
+      "rank_1_hijack_pct": 83.3,
+      "canary_exfiltration_pct": 66.7,
+      "same_tier_poison_pct": 0.0,
+      "recall_eligible_queries": 1,
+      "authorized_recall_pct": 100.0,
+      "retrieval_errors": 0,
+      "latency_samples": 18,
+      "p50_latency_ms": 129.93,
+      "p95_latency_ms": 190.95
+    }
+  },
+  "performance": {
+    "targets": {
+      "unprotected": {
+        "p50_ms": 4.318,
+        "p95_ms": 34.374,
+        "samples": 51
+      },
+      "memshield": {
+        "p50_ms": 3.497,
+        "p95_ms": 16.704,
+        "samples": 36
+      },
+      "qdrant": {
+        "p50_ms": 10.245,
+        "p95_ms": 31.622,
+        "samples": 36
+      },
+      "mem0": {
+        "p50_ms": 129.93,
+        "p95_ms": 190.949,
+        "samples": 18
+      }
+    },
+    "mean_agent_turn_ms": 60.75,
+    "query_executions": 51,
+    "eval_seconds": 5.395,
+    "throughput_qps": 9.45,
+    "unprotected_p50_ms": 4.318,
+    "unprotected_p95_ms": 34.374,
+    "memshield_p50_ms": 3.497,
+    "memshield_p95_ms": 16.704,
+    "p50_delta_ms": -0.821,
+    "p95_delta_ms": -17.67,
+    "p50_delta_pct": -19.0,
+    "rls_equal_or_faster_p50": true
+  },
+  "markdown_table": "| Scenario | Target | Queries Leaking \u22651 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 Search Latency |\n| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| **S7: Compartment Read-Across** | `Unprotected pgvector` | 50.0% | 27.8% | 33.3% | 50.0% | 0.0% | 100.0% (n=4) | 4.81 / 14.93 ms |\n| **S7: Compartment Read-Across** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=4) | 10.67 / 16.08 ms |\n| **S7: Compartment Read-Across** | `adk-memshield on a superuser DSN` | refused (config) | | | | | | |\n| **S7: Compartment Read-Across** | `Qdrant (payload filters)` | 50.0% | 27.8% | 33.3% | 50.0% | 0.0% | 100.0% (n=4) | 9.89 / 36.15 ms |\n| **S7: Compartment Read-Across** | `Mem0 OSS (user_id + metadata filters)` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |\n| **S8: Forged Identity vs Verified Token** | `Unprotected pgvector` | 83.3% | 82.4% | 83.3% | 66.7% | 0.0% | 100.0% (n=1) | 6.05 / 39.79 ms |\n| **S8: Forged Identity vs Verified Token** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=1) | 0.11 / 9.28 ms |\n| **S8: Forged Identity vs Verified Token** | `adk-memshield on a superuser DSN` | refused (config) | | | | | | |\n| **S8: Forged Identity vs Verified Token** | `Qdrant (payload filters)` | 83.3% | 77.8% | 83.3% | 66.7% | 0.0% | 100.0% (n=1) | 11.11 / 29.35 ms |\n| **S8: Forged Identity vs Verified Token** | `Mem0 OSS (user_id + metadata filters)` | 83.3% | 44.4% | 83.3% | 66.7% | 0.0% | 100.0% (n=1) | 129.93 / 190.95 ms |\n| **S9: Pooled Session-Context Bleed** | `Unprotected pgvector` | 100.0% | 80.0% | 80.0% | 100.0% | 0.0% | 0.0% (n=3) | 2.81 / 20.24 ms |\n| **S9: Pooled Session-Context Bleed** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=3) | 2.14 / 4.06 ms |\n| **S9: Pooled Session-Context Bleed** | `adk-memshield on a superuser DSN` | refused (config) | | | | | | |\n| **S9: Pooled Session-Context Bleed** | `Qdrant (payload filters)` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |\n| **S9: Pooled Session-Context Bleed** | `Mem0 OSS (user_id + metadata filters)` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |\n| **AGGREGATE (attacks)** | `Unprotected pgvector` | **76.5%** | **62.0%** | **64.7%** | **70.6%** | 0.0% | 62.5% (n=8) | 4.32 / 34.37 ms |\n| **AGGREGATE (attacks)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=8) | 3.5 / 16.7 ms |\n| **AGGREGATE (attacks)** | `Qdrant (payload filters)` | **66.7%** | **52.8%** | **58.3%** | **58.3%** | 0.0% | 100.0% (n=5) | 10.25 / 31.62 ms |\n| **AGGREGATE (attacks)** | `Mem0 OSS (user_id + metadata filters)` | **83.3%** | **44.4%** | **83.3%** | **66.7%** | 0.0% | 100.0% (n=1) | 129.93 / 190.95 ms |",
+  "gate": {
+    "exit_code": 0,
+    "fail_on": "leak",
+    "min_recall": null,
+    "reasons": []
+  },
+  "scale": null
+}
+
+# exit code: 0
