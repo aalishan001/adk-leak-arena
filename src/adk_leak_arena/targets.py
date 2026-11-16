@@ -139,6 +139,7 @@ class MemoryTarget:
     protected: bool = False
     capabilities: Capabilities = Capabilities()
     version: str = ""
+    supports_synthetic: bool = False  # can take the synthetic stress rows (seed sizes > 36)
 
     def __init__(self, config: ArenaConfig, *, namespace: str = "") -> None:
         self.config = config
@@ -154,6 +155,10 @@ class MemoryTarget:
     def delete_tagged(self, key: str, value: Any) -> int:
         """Remove rows whose payload ``key`` equals ``value`` (fixtures, synthetic rows)."""
         return 0
+
+    def seed_vectors(self, items: Sequence[tuple[dict[str, Any], list[float]]]) -> None:
+        """Store pre-embedded synthetic rows ``(payload, vector)`` (only if supports_synthetic)."""
+        raise NotImplementedError(f"{self.name} does not take synthetic rows")
 
     def search(self, *, persona: CallerPersona, query: str, top_k: int, mistake: Mistake) -> list[dict[str, Any]]:
         """Return rows as dicts with ``content`` plus owner keys (tenant_id, user_id, scope,
@@ -440,6 +445,7 @@ class QdrantTarget(MemoryTarget):
     name = "qdrant"
     label = "Qdrant (payload filters)"
     capabilities = Capabilities()
+    supports_synthetic = True
 
     def __init__(self, config: ArenaConfig, *, namespace: str = "") -> None:
         super().__init__(config, namespace=namespace)
@@ -494,6 +500,19 @@ class QdrantTarget(MemoryTarget):
             for rec, vec in zip(records, vectors, strict=True)
         ]
         self.client.upsert(self.collection, points=points, wait=True)
+
+    def seed_vectors(self, items: Sequence[tuple[dict[str, Any], list[float]]]) -> None:
+        import uuid
+
+        from qdrant_client import models
+
+        for start in range(0, len(items), 1000):
+            batch = items[start : start + 1000]
+            self.client.upsert(
+                self.collection,
+                points=[models.PointStruct(id=str(uuid.uuid4()), vector=vec, payload=payload) for payload, vec in batch],
+                wait=True,
+            )
 
     def delete_tagged(self, key: str, value: Any) -> int:
         from qdrant_client import models

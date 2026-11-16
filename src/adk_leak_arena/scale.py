@@ -2,8 +2,13 @@
 
 Synthetic rows are bulk-loaded with an admin `COPY` because they are test scaffolding, not
 the security path under test; every read the arena measures still goes through the
-`memshield_app` role and RLS. Fixture rows (Scenario 6) are written through each service's
-normal write path so the RLS INSERT policy is genuinely exercised.
+`memshield_app` role and RLS. Fixture rows (Scenarios 6 and 7) are written through each
+service's normal write path so the RLS INSERT policy is genuinely exercised.
+
+Sizes up to 2,000 rows use the 0.1.0 generator unchanged (same rows, so 0.1.0 numbers
+reproduce). The 10,000 and 100,000 tiers are generated and loaded in chunks (bounded
+memory) from a separate seeded stream, then the tables are ANALYZEd. Qdrant targets get
+the same rows and vectors; Mem0 embeds every add itself and is limited to the baseline.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -30,7 +35,10 @@ from .unprotected_service import UnprotectedPgVectorMemoryService
 
 logger = logging.getLogger(__name__)
 
-SEED_SIZE_OPTIONS: tuple[int, ...] = (BASELINE_SEED_SIZE, 250, 500, 1000, 2000)
+SEED_SIZE_OPTIONS: tuple[int, ...] = (BASELINE_SEED_SIZE, 250, 500, 1000, 2000, 10_000, 100_000)
+LEGACY_MAX_SEED_SIZE = 2000  # sizes up to here use the 0.1.0 generator unchanged
+LARGE_SEED_SIZE = 10_000  # from here on the CLI and console show a load-time notice
+_CHUNK_ROWS = 5000
 TOP_K_OPTIONS: tuple[int, ...] = (1, 3, 5, 10, 20)
 TABLES: tuple[str, ...] = ("memories", "memories_unprotected")
 
@@ -85,7 +93,7 @@ _USERS_PER_TENANT = 40
 _STATE_LOCK = threading.Lock()
 _CURRENT_SEED_SIZE = BASELINE_SEED_SIZE
 _FIXTURE_LOCK = threading.Lock()
-_FIXTURE_REFS: dict[str, int] = {}  # per database DSN (schema-scoped runs count separately)
+_FIXTURE_REFS: dict[tuple[str, str], int] = {}  # per (database DSN, scenario)
 
 
 def current_seed_size() -> int:
@@ -158,6 +166,72 @@ def generate_synthetic_rows(config: ArenaConfig, count: int) -> list[tuple[Any, 
     return rows
 
 
+def iter_synthetic_chunks(
+    config: ArenaConfig, count: int, *, chunk_rows: int = _CHUNK_ROWS
+) -> Iterator[list[tuple[tuple[Any, ...], np.ndarray]]]:
+    """Yield ``(copy_row, unit_vector)`` chunks for the 10k/100k tiers (bounded memory).
+
+    Same templates, tenants and label mix as :func:`generate_synthetic_rows`, from its own
+    seeded stream, so a given size always produces the same rows.
+    """
+    embed_fn = get_cached_embed_fn(config.embedding_model, config.embedding_dim)
+    canonical = [_render(t, np.random.default_rng(0), 0) for t in _TEMPLATES]
+    template_vecs = np.asarray(embed_fn(canonical), dtype=np.float64)
+    template_vecs /= np.linalg.norm(template_vecs, axis=1, keepdims=True)
+    weights = np.array([w for _, _, w in _SYNTH_TENANTS])
+    weights = weights / weights.sum()
+    vec_fmt = "[" + ",".join(["%.6f"] * config.embedding_dim) + "]"
+    rng = np.random.default_rng(_SYNTH_RNG_SEED + count)
+    for start in range(0, count, chunk_rows):
+        n = min(chunk_rows, count - start)
+        tmpl_idx = rng.integers(len(_TEMPLATES), size=n)
+        vecs = template_vecs[tmpl_idx] + rng.normal(0.0, _SYNTH_NOISE_SIGMA, size=(n, config.embedding_dim))
+        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+        tenant_idx = rng.choice(len(_SYNTH_TENANTS), size=n, p=weights)
+        user_idx = rng.integers(_USERS_PER_TENANT, size=n)
+        shared = rng.random(n) < 0.15
+        private_clr = rng.integers(1, 4, size=n)
+        shared_clr = rng.integers(1, 6, size=n)
+        out: list[tuple[tuple[Any, ...], np.ndarray]] = []
+        for j in range(n):
+            i = start + j
+            tenant, prefix, _ = _SYNTH_TENANTS[int(tenant_idx[j])]
+            t = int(tmpl_idx[j])
+            is_shared = bool(shared[j])
+            meta = {"seed_key": f"syn_{i:06d}", "synthetic": True, "template": t, "adversarial": False}
+            row = (
+                config.app_name,
+                tenant,
+                f"{prefix}_emp_{int(user_idx[j]):03d}",
+                None,
+                "user",
+                "tenant_shared" if is_shared else "private",
+                int(shared_clr[j] if is_shared else private_clr[j]),
+                f"{_render(_TEMPLATES[t], rng, i)} [syn-{i:06d}]",
+                json.dumps(meta),
+                vec_fmt % tuple(vecs[j]),
+            )
+            out.append((row, vecs[j]))
+        yield out
+
+
+def _synthetic_payload(row: tuple[Any, ...]) -> dict[str, Any]:
+    meta = json.loads(row[8])
+    return {
+        "tenant_id": row[1],
+        "user_id": row[2],
+        "scope": row[5],
+        "min_clearance": int(row[6]),
+        "compartments": [],
+        "content": row[7],
+        **meta,
+    }
+
+
+def _vector_of(row: tuple[Any, ...]) -> list[float]:
+    return [float(x) for x in str(row[9]).strip("[]").split(",")]
+
+
 _COPY_COLS = (
     "app_name, tenant_id, user_id, session_id, author, scope, min_clearance, "
     "content, custom_metadata, embedding"
@@ -172,6 +246,46 @@ def _copy_rows_admin(config: ArenaConfig, rows: list[tuple[Any, ...]]) -> None:
                     with cur.copy(f"COPY {table} ({_COPY_COLS}) FROM STDIN") as copy:
                         for row in rows:
                             copy.write_row(row)
+
+
+def _load_large(config: ArenaConfig, count: int, external: Sequence[Any]) -> None:
+    """COPY the 10k/100k tiers chunk by chunk into both tables (and external targets)."""
+    with psycopg.connect(config.admin_dsn, connect_timeout=5) as conn:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                for chunk in iter_synthetic_chunks(config, count):
+                    for table in TABLES:
+                        with cur.copy(f"COPY {table} ({_COPY_COLS}) FROM STDIN") as copy:
+                            for row, _ in chunk:
+                                copy.write_row(row)
+                    for target in external:
+                        target.seed_vectors([(_synthetic_payload(row), vec.tolist()) for row, vec in chunk])
+        conn.execute("ANALYZE memories")
+        conn.execute("ANALYZE memories_unprotected")
+        conn.commit()
+
+
+def set_hnsw(config: ArenaConfig, enabled: bool) -> dict[str, Any]:
+    """Create (or drop) an HNSW cosine index on both arena tables.
+
+    The 0.1.0 tables have no ANN index, so every search is exact. With the index, the
+    planner may answer ``ORDER BY embedding <=> $1 LIMIT k`` from the HNSW graph and apply
+    the remaining filters (app WHERE or RLS policy) afterwards.
+    """
+    t0 = time.perf_counter()
+    with psycopg.connect(config.admin_dsn, autocommit=True, connect_timeout=5) as conn:
+        for table in TABLES:
+            name = f"idx_{table}_embedding_hnsw"
+            if enabled:
+                conn.execute("SET maintenance_work_mem = '256MB'")
+                conn.execute("SET max_parallel_maintenance_workers = 0")  # no /dev/shm needs in containers
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {name} ON {table} USING hnsw (embedding vector_cosine_ops)"
+                )
+            else:
+                conn.execute(f"DROP INDEX IF EXISTS {name}")
+            conn.execute(f"ANALYZE {table}")
+    return {"hnsw": enabled, "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 1)}
 
 
 def _insert_rows_rls(config: ArenaConfig, rows: list[tuple[Any, ...]]) -> None:
@@ -226,26 +340,45 @@ def delete_synthetic(config: ArenaConfig) -> int:
     return deleted
 
 
-def apply_seed_size(config: ArenaConfig, seed_size: int) -> dict[str, Any]:
-    """Scale both tables to `seed_size` rows (36 baseline + synthetic background rows)."""
+def apply_seed_size(config: ArenaConfig, seed_size: int, targets: Any = None) -> dict[str, Any]:
+    """Scale both tables to `seed_size` rows (36 baseline + synthetic background rows).
+
+    ``targets`` (a TargetSet) also scales its non-SQL targets; a target that cannot take
+    synthetic rows (Mem0) raises ``ValueError`` before anything is loaded.
+    """
     global _CURRENT_SEED_SIZE
     if seed_size not in SEED_SIZE_OPTIONS:
         raise ValueError(f"seed_size must be one of {SEED_SIZE_OPTIONS}")
+    external = targets.external() if targets is not None else []
+    if seed_size > BASELINE_SEED_SIZE:
+        unable = [t.name for t in external if not getattr(t, "supports_synthetic", False)]
+        if unable:
+            raise ValueError(f"target(s) {unable} support only the {BASELINE_SEED_SIZE}-row baseline seed size")
     t0 = time.perf_counter()
     removed = _delete_tagged(config, "synthetic", "true")
+    for target in external:
+        target.delete_tagged("synthetic", True)
     count = seed_size - BASELINE_SEED_SIZE
-    t_gen = time.perf_counter()
-    rows = generate_synthetic_rows(config, count)
-    gen_ms = (time.perf_counter() - t_gen) * 1000.0
+    gen_ms = 0.0
     t_load = time.perf_counter()
     method = "none"
-    if rows:
-        try:
-            _copy_rows_admin(config, rows)
-            method = "admin COPY"
-        except psycopg.OperationalError:
-            _insert_rows_rls(config, rows)
-            method = "per-owner RLS INSERT (no admin DSN)"
+    if seed_size > LEGACY_MAX_SEED_SIZE:
+        _load_large(config, count, external)
+        method = "admin COPY (chunked) + ANALYZE"
+    else:
+        t_gen = time.perf_counter()
+        rows = generate_synthetic_rows(config, count)
+        gen_ms = (time.perf_counter() - t_gen) * 1000.0
+        t_load = time.perf_counter()
+        if rows:
+            try:
+                _copy_rows_admin(config, rows)
+                method = "admin COPY"
+            except psycopg.OperationalError:
+                _insert_rows_rls(config, rows)
+                method = "per-owner RLS INSERT (no admin DSN)"
+            for target in external:
+                target.seed_vectors([(_synthetic_payload(r), _vector_of(r)) for r in rows])
     load_ms = (time.perf_counter() - t_load) * 1000.0
     with _STATE_LOCK:
         _CURRENT_SEED_SIZE = seed_size

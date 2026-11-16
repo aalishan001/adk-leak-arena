@@ -227,7 +227,7 @@ class BenchmarkJobManager:
                 job.log(f"namespace {run_cfg.schema}: targets {','.join(p.targets)} seeded")
                 try:
                     if p.seed_size > BASELINE_SEED_SIZE:
-                        await asyncio.to_thread(apply_seed_size, run_cfg, p.seed_size)
+                        await asyncio.to_thread(apply_seed_size, run_cfg, p.seed_size, tset)
                     job.result = await run_full_benchmark(
                         run_cfg,
                         caller_id=p.caller_id,

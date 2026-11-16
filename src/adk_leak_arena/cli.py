@@ -16,8 +16,8 @@ from . import __version__
 from .config import ArenaConfig
 from .evaluator import ATTACK_IDS, DEFAULT_SCENARIO_IDS, SCENARIO_IDS, run_full_benchmark
 from .namespaces import run_namespace
-from .targets import DEFAULT_TARGETS, TARGET_CLASSES, parse_targets
-from .scale import SEED_SIZE_OPTIONS, TOP_K_OPTIONS, apply_seed_size, delete_synthetic
+from .targets import DEFAULT_TARGETS, SQL_TARGETS, TARGET_CLASSES, parse_targets
+from .scale import LARGE_SEED_SIZE, SEED_SIZE_OPTIONS, TOP_K_OPTIONS, apply_seed_size, delete_synthetic, set_hnsw
 
 _ANSI = {
     "red": "\033[91m",
@@ -347,6 +347,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Use the shared default tables instead of a per-run schema (0.1.0 behaviour)",
     )
+    eval_p.add_argument(
+        "--hnsw",
+        action="store_true",
+        help="Build an HNSW index on both arena tables before the run (0.1.0 tables have none: exact search)",
+    )
+
+    sub.add_parser(
+        "seed",
+        help="Create or upgrade the arena schema and roles on ARENA_ADMIN_DSN and load the baseline rows",
+    )
+
+    prep_p = sub.add_parser(
+        "prepared",
+        help="Prepared-connection mode: repeat a light user's query on one pinned connection, recall per run",
+    )
+    prep_p.add_argument("--seed-size", type=int, default=10_000, choices=[s for s in SEED_SIZE_OPTIONS if s >= 1000])
+    prep_p.add_argument("--repeats", type=int, default=12, help="Executions per target (>5 to reach a generic plan)")
+    prep_p.add_argument("--top-k", type=int, default=10, choices=TOP_K_OPTIONS)
+    prep_p.add_argument("--query", default=None, help="Query text (default: a synthetic-template query)")
+    prep_p.add_argument("--no-hnsw", action="store_true", help="Run without the HNSW index (exact search)")
+    prep_p.add_argument("--iterative-scan", action="store_true",
+                        help="Connect with hnsw.iterative_scan=relaxed_order (pgvector 0.8+)")
+    prep_p.add_argument("--targets", default="unprotected,memshield,memshield_unpinned",
+                        help="Subset of unprotected,memshield,memshield_unpinned")
+    prep_p.add_argument("--format", choices=("table", "json"), default="table")
 
     args = parser.parse_args(list(argv) if argv is not None else None)
     cfg = ArenaConfig()
@@ -354,6 +379,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "serve":
         uvicorn.run("adk_leak_arena.server:app", host=args.host, port=args.port, reload=False)
         return 0
+
+    if args.command == "seed":
+        from .runner_pair import ensure_schema_and_seed
+
+        try:
+            info = ensure_schema_and_seed(cfg)
+        except Exception as exc:
+            print(f"leak-arena seed: error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(json.dumps(info, default=str))
+        return EXIT_OK
+
+    if args.command == "prepared":
+        from .prepared import render_prepared_table, run_prepared_mode
+
+        if args.repeats < 6:
+            parser.error("--repeats must be at least 6 (psycopg prepares after 5 executions)")
+        names = [n.strip() for n in args.targets.split(",") if n.strip()]
+        try:
+            report = run_prepared_mode(
+                cfg, seed_size=args.seed_size, hnsw=not args.no_hnsw, repeats=args.repeats,
+                iterative_scan=args.iterative_scan,
+                top_k=args.top_k, targets=names,
+                **({"query": args.query} if args.query else {}),
+                log=lambda m: print(f"leak-arena prepared: {m}", file=sys.stderr),
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        except Exception as exc:
+            print(f"leak-arena prepared: run error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(json.dumps(report, indent=2) if args.format == "json" else render_prepared_table(report))
+        return EXIT_OK
 
     if args.command == "eval":
         fmt = "json" if args.json else args.format
@@ -371,13 +429,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(exc))
         if args.min_recall is not None and not 0.0 <= args.min_recall <= 1.0:
             parser.error("--min-recall must be between 0 and 1")
+        if args.hnsw and args.shared_db:
+            parser.error("--hnsw changes the tables; use it without --shared-db")
+        if args.seed_size > SEED_SIZE_OPTIONS[0]:
+            unable = [n for n in target_names if n not in SQL_TARGETS and not TARGET_CLASSES[n].supports_synthetic]
+            if unable:
+                parser.error(f"--seed-size > {SEED_SIZE_OPTIONS[0]} is not available for {unable} (baseline only)")
         try:
             with run_namespace(cfg, target_names, isolated=not args.shared_db) as (run_cfg, tset):
+                if args.seed_size >= LARGE_SEED_SIZE:
+                    print(
+                        f"leak-arena eval: loading {args.seed_size:,} rows per table (plus Qdrant, if selected); "
+                        "this takes minutes and a few GB of RAM on a laptop",
+                        file=sys.stderr,
+                    )
                 scale_info = (
-                    apply_seed_size(run_cfg, args.seed_size)
+                    apply_seed_size(run_cfg, args.seed_size, tset)
                     if args.seed_size > SEED_SIZE_OPTIONS[0]
                     else None
                 )
+                if args.hnsw:
+                    hnsw_info = set_hnsw(run_cfg, True)
+                    print(f"leak-arena eval: HNSW index built in {hnsw_info['elapsed_ms']} ms", file=sys.stderr)
                 try:
                     report = asyncio.run(
                         run_full_benchmark(
