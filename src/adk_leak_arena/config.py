@@ -48,10 +48,14 @@ class ArenaConfig:
             ),
         )
     )
+    # Schema owner, used for seeding, synthetic loads and run schemas. Public mode has no
+    # default: the web process must not hold it (seed with `leak-arena seed` instead).
     admin_dsn: str = field(
         default_factory=lambda: os.environ.get(
             "ARENA_ADMIN_DSN",
-            "postgresql://postgres:postgres_admin_pass@localhost:54330/memshield",
+            ""
+            if _env_flag("ARENA_PUBLIC_MODE", "0")
+            else "postgresql://postgres:postgres_admin_pass@localhost:54330/memshield",
         )
     )
     ollama_base_url: str = field(

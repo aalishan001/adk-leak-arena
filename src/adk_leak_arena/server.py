@@ -54,7 +54,62 @@ from .unprotected_service import FailureMode
 logger = logging.getLogger(__name__)
 
 _STATIC_INDEX = Path(__file__).resolve().parent / "static" / "index.html"
-_INITIALIZED = False
+# Databases (by application DSN) this process has seeded or found seeded.
+_INITIALIZED: set[str] = set()
+
+
+class PublicModeConfigurationError(RuntimeError):
+    """The web process was started in public mode with credentials it must not hold."""
+
+
+def check_public_posture(cfg: ArenaConfig) -> dict[str, Any]:
+    """Refuse a public console that holds the admin login or reads through a role that can
+    bypass row-level security (superuser, BYPASSRLS, or owner of an arena table)."""
+    if cfg.admin_dsn:
+        raise PublicModeConfigurationError(
+            "ARENA_PUBLIC_MODE=1 must not be given ARENA_ADMIN_DSN: seed with `leak-arena seed` "
+            "in a separate job and give the web process only the application role"
+        )
+    with psycopg.connect(cfg.db_dsn, connect_timeout=5) as conn:
+        role, is_super, bypass, owns = conn.execute(
+            """
+            SELECT current_user, r.rolsuper, r.rolbypassrls,
+                   EXISTS (
+                     SELECT 1 FROM pg_class c
+                     WHERE c.oid IN (to_regclass('memories'), to_regclass('memories_unprotected'))
+                       AND pg_has_role(current_user, c.relowner, 'MEMBER')
+                   )
+            FROM pg_roles r WHERE r.rolname = current_user
+            """
+        ).fetchone()
+    problems = [
+        msg
+        for flag, msg in (
+            (is_super, "is a superuser"),
+            (bypass, "has BYPASSRLS"),
+            (owns, "owns an arena table (or is a member of its owner role)"),
+        )
+        if flag
+    ]
+    if problems:
+        raise PublicModeConfigurationError(
+            f"ARENA_PUBLIC_MODE=1 refuses to run as role {role!r}: it " + "; it ".join(problems)
+        )
+    return {"role": role}
+
+
+def _is_seeded(cfg: ArenaConfig) -> bool:
+    try:
+        with psycopg.connect(cfg.db_dsn, connect_timeout=3) as conn:
+            # Only the first schema on the search_path counts (where `leak-arena seed` writes).
+            table = conn.execute(
+                "SELECT to_regclass(quote_ident(current_schema()) || '.memories_unprotected')::text"
+            ).fetchone()[0]
+            if table is None:
+                return False
+            return conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] > 0
+    except psycopg.Error:
+        return False
 
 _MAX_QUERY_CHARS = 2000
 _MAX_INJECT_CHARS = 1000
@@ -205,13 +260,19 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
     jobs = BenchmarkJobManager(cfg, history)
 
     async def _ensure_seeded() -> None:
-        global _INITIALIZED
-        if _INITIALIZED:
+        if cfg.db_dsn in _INITIALIZED:
             return
+        if cfg.public_mode:
+            # The public web process never seeds (it has no admin login): the arena is seeded
+            # by `leak-arena seed` in a separate job. Until then requests get 503.
+            if await asyncio.to_thread(_is_seeded, cfg):
+                _INITIALIZED.add(cfg.db_dsn)
+                return
+            raise HTTPException(status_code=503, detail="arena not seeded yet; run `leak-arena seed` with the admin DSN")
         async with seed_lock:
-            if not _INITIALIZED:
+            if cfg.db_dsn not in _INITIALIZED:
                 await asyncio.to_thread(ensure_schema_and_seed, cfg)
-                _INITIALIZED = True
+                _INITIALIZED.add(cfg.db_dsn)
 
     def _reject_if_public(action: str) -> None:
         # ARENA_PUBLIC_MODE: a read-only console for public deployments. Attacks (searches)
@@ -228,7 +289,21 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        await _ensure_seeded()
+        if cfg.public_mode:
+            # Refuse to start with the admin login or an RLS-bypassing application role.
+            await asyncio.to_thread(check_public_posture, cfg)
+            try:
+                await _ensure_seeded()
+            except HTTPException:
+                logger.warning("public mode: arena not seeded yet; /readyz reports 503 until `leak-arena seed` runs")
+            yield
+            return
+        try:
+            await _ensure_seeded()
+        except Exception as exc:  # database not reachable yet: /readyz says so; requests retry
+            logger.warning("startup seeding failed (%s); will retry on the next request", type(exc).__name__)
+            yield
+            return
         if cfg.startup_baseline:
             # Reference run so Run History is useful immediately; DB is already freshly seeded.
             jobs.start(BenchmarkParams(label="startup-baseline"), pre_cleanup=False)
@@ -279,6 +354,8 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             await asyncio.to_thread(_ping)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"database not ready ({type(exc).__name__})") from None
+        if cfg.public_mode:
+            await _ensure_seeded()  # 503 until the seed job has run
         return {"status": "ready", "public_mode": cfg.public_mode}
 
     @app.get("/", response_class=HTMLResponse)
@@ -346,12 +423,11 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/reset")
     async def reset_database() -> dict[str, Any]:
-        global _INITIALIZED
         _reject_if_public("reset the database")
         _reject_if_running("reset the database")
         async with seed_lock:
             res = await asyncio.to_thread(ensure_schema_and_seed, cfg)
-            _INITIALIZED = True
+            _INITIALIZED.add(cfg.db_dsn)
         return res
 
     @app.post("/api/scale")
