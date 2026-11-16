@@ -295,7 +295,7 @@ def test_qdrant_target_leaks_on_tenant_only_filter_and_isolates_on_control() -> 
 
 # ----------------------------------------------------------------------------- public mode
 def test_public_mode_is_read_only() -> None:
-    app = create_app(ArenaConfig(startup_baseline=False, public_mode=True))
+    app = create_app(ArenaConfig(startup_baseline=False, public_mode=True, admin_dsn=""))
     with TestClient(app) as tc:
         assert tc.get("/api/state").json()["public_mode"] is True
         for path, body in (
@@ -345,11 +345,52 @@ def test_seed_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert isinstance(info, dict)
 
 
+def test_public_mode_refuses_the_admin_login_and_bypassing_roles() -> None:
+    from adk_leak_arena.server import PublicModeConfigurationError
+
+    base = ArenaConfig()
+    # Holding the admin DSN at all is refused ...
+    with pytest.raises(PublicModeConfigurationError, match="ARENA_ADMIN_DSN"):
+        with TestClient(create_app(ArenaConfig(startup_baseline=False, public_mode=True))):
+            pass
+    # ... and so is reading through a superuser (which also bypasses RLS and owns the tables).
+    su = ArenaConfig(startup_baseline=False, public_mode=True, admin_dsn="", db_dsn=base.admin_dsn)
+    with pytest.raises(PublicModeConfigurationError, match="superuser"):
+        with TestClient(create_app(su)):
+            pass
+
+
+def test_public_mode_never_seeds_and_waits_for_the_seed_job() -> None:
+    from adk_leak_arena.namespaces import create_run_schema, drop_run_schema
+
+    base = ArenaConfig()
+    schema = create_run_schema(base)  # an empty schema: nothing seeded there yet
+    try:
+        empty = base.for_schema(schema)
+        cfg = ArenaConfig(startup_baseline=False, public_mode=True, admin_dsn="", db_dsn=empty.db_dsn)
+        with TestClient(create_app(cfg)) as tc:
+            assert tc.get("/healthz").status_code == 200
+            ready = tc.get("/readyz")
+            assert ready.status_code == 503 and "leak-arena seed" in ready.json()["detail"]
+            assert tc.post("/api/attack", json={"preset_id": "S1", "query": "hello there"}).status_code == 503
+        with psycopg.connect(base.admin_dsn) as conn:  # the public process created nothing
+            tables = conn.execute(
+                "SELECT count(*) FROM pg_tables WHERE schemaname = %s", (schema,)
+            ).fetchone()[0]
+        assert tables == 0
+    finally:
+        drop_run_schema(base, schema)
+
+
 def test_web_deployment_is_single_replica_without_secrets() -> None:
     deploy = (ROOT / "deploy" / "base" / "deployment.yaml").read_text(encoding="utf-8")
     # Run history and the benchmark slot are in process memory: exactly one pod, never two.
     assert "\n  replicas: 1\n" in deploy and "type: Recreate" in deploy
     assert "/readyz" in deploy and "/healthz" in deploy and "runAsNonRoot: true" in deploy
+    # The public web pod never gets the admin DSN; only the seed Job does.
+    assert "ARENA_ADMIN_DSN" not in deploy.split("env:", 1)[1].split("readinessProbe", 1)[0].replace(
+        "Public mode refuses to start with ARENA_ADMIN_DSN", "")
+    assert "key: ARENA_ADMIN_DSN" in (ROOT / "deploy" / "base" / "seed-job.yaml").read_text(encoding="utf-8")
     for path in (ROOT / "deploy").rglob("*.yaml"):
         text = path.read_text(encoding="utf-8")
         assert "kind: Secret\n" not in text, path  # secrets are references only
