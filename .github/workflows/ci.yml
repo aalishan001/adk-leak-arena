@@ -30,6 +30,10 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 20
+      qdrant:
+        image: qdrant/qdrant:v1.20.0
+        ports:
+          - 56333:6333
 
     env:
       ARENA_DB_DSN: postgresql://memshield_app:memshield_pass@localhost:54330/memshield
@@ -37,6 +41,8 @@ jobs:
       ARENA_STARTUP_BASELINE: "0"
       OLLAMA_BASE_URL: http://127.0.0.1:9
       FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
+      ARENA_QDRANT_URL: http://localhost:56333
+      MEM0_TELEMETRY: "False"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,7 +59,7 @@ jobs:
           key: fastembed-bge-small-en-v1.5
 
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -e ".[dev,qdrant]"
 
       - name: Apply arena schema
         run: psql "$ARENA_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/init_arena.sql
@@ -61,5 +67,8 @@ jobs:
       - name: Test suite
         run: pytest -v
 
-      - name: Evaluation matrix
+      - name: Evaluation matrix (0.1.0 scenarios, gate on)
         run: leak-arena eval --format markdown
+
+      - name: CI gate on the 0.2.0 scenarios (S7-S9) with a recall floor
+        run: leak-arena eval --scenarios S7,S8,S9 --targets unprotected,memshield,qdrant --min-recall 1.0 --format markdown
