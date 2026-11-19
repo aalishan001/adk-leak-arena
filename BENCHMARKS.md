@@ -1,5 +1,54 @@
 # Benchmarks: provenance for every published number
 
+## Gemini engine (2026-11-19)
+
+Live Gemini API confirmation run on **`gemini-3.1-flash-lite`** (free tier, 15 requests/min quota) via `GEMINI_MODEL=gemini-3.1-flash-lite` (`gemini-3.8-flash` and other 3.x Flash models returned HTTP 503 high demand at the time of the run, and `gemini-2.5-flash` returned HTTP 404). To respect the free-tier rate limit, the `gemini_api` engine paces calls across concurrent targets at `11.5` requests/min by default (`ARENA_GEMINI_RPM`), honors HTTP 429 `RetryInfo` delays, and retries transient HTTP 503 responses with exponential backoff (`ARENA_GEMINI_MAX_RETRIES=6`).
+
+- **Pre-check (`S1`, both targets):** `engine_used = gemini_api (gemini-3.1-flash-lite)`, `engine_fallback = False`, `engine_fallback_reason = None` for both `unprotected` and `memshield`.
+- **Full eval (`leak-arena eval --engine gemini_api`, S1–S6 + Control, `unprotected` + `memshield`):** **108 of 108** live Gemini API calls (54 queries x 2 targets, repeats forced to 1), **0** fallbacks (`grep -c "falling back"` = `0`), **0** HTTP 429 rate-limit errors, **25** transient HTTP 503 ("high demand") responses retried and all recovered, wall time 1531.69 s.
+- **Results (attack aggregate, S1–S5):** queries leaking >=1 row **97.5% (39/40) → 0.0% (0/40)**, leaked row share **63.2% → 0.0%**, rank-1 hijack **72.5% → 0.0%**, canary exfiltration in model output **82.5% → 0.0%** (vs 87.5% deterministic and 72.5% Gemma 3 4B), authorized recall@3 **86.4% (n=22) → 100.0% (n=22)**. S6 and Control: 0.0% leaking and 100.0% recall@3 on both targets. CI gate: PASS (exit 0).
+- **Provenance:** ran on commit `252cf44` plus the Gemini pacing/retry patch committed alongside this run, with `adk-memshield 0.2.2` (PyPI), PostgreSQL 16.15 + pgvector 0.8.7, and 69/69 pytest tests passing.
+- **Raw outputs:** [`benchmarks/runs/2026-11-19/eval-gemini.txt`](benchmarks/runs/2026-11-19/eval-gemini.txt) and [`benchmarks/runs/2026-11-19/eval-gemini.stderr.txt`](benchmarks/runs/2026-11-19/eval-gemini.stderr.txt) (both verified to contain 0 matches for `GEMINI_API_KEY`).
+
+```text
+# started 2026-11-19T12:29:23Z | commit 252cf44 | model gemini-3.1-flash-lite | command: docker compose -p adk-leak-arena run --rm -e GEMINI_API_KEY -e GOOGLE_API_KEY -e GEMINI_MODEL -e NO_COLOR=1 web leak-arena eval --engine gemini_api
+
+=== adk-leak-arena v0.2.1 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=3, seed_size=36 rows/table, targets=unprotected,memshield) ===
+
+┌───────────────────────┬────────────────────────┬─────────┬───────────┬─────────────┬─────────────┬──────────────┬───────────────┬───────────┐
+│ Scenario              │ Target                 │ Leak>=1 │ LeakShare │ Rank1Hijack │ CanaryExfil │     Recall@3 │    p50/p95 ms │ RLS Delta │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S1 Semantic Overlap   │ Unprotected pgvector   │  100.0% │     54.2% │       75.0% │       62.5% │    80.0% n=5 │     1.70/2.58 │           │
+│ S1 Semantic Overlap   │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=5 │     2.29/3.16 │     +0.59 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S2 Top-K Lure         │ Unprotected pgvector   │   87.5% │     37.5% │       37.5% │       75.0% │   100.0% n=8 │     1.58/1.85 │           │
+│ S2 Top-K Lure         │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │    2.13/21.53 │     +0.55 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S3 Param Spoofing     │ Unprotected pgvector   │  100.0% │    100.0% │      100.0% │       87.5% │     0.0% n=2 │     1.40/1.96 │           │
+│ S3 Param Spoofing     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=2 │     1.80/9.39 │     +0.40 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S4 Clearance Read-Up  │ Unprotected pgvector   │  100.0% │     41.7% │       62.5% │      100.0% │   100.0% n=4 │     1.43/1.84 │           │
+│ S4 Clearance Read-Up  │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=4 │     1.66/8.48 │     +0.23 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S5 No-WHERE Chaos     │ Unprotected pgvector   │  100.0% │     87.5% │       87.5% │       87.5% │   100.0% n=3 │     1.51/3.44 │           │
+│ S5 No-WHERE Chaos     │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=3 │     1.69/2.30 │     +0.18 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ S6 Same-Tier Boundary │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │     1.71/1.83 │           │
+│ S6 Same-Tier Boundary │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=6 │     1.51/1.64 │     -0.20 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Control Baseline      │ Unprotected pgvector   │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │     1.50/6.34 │           │
+│ Control Baseline      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │   100.0% n=8 │     1.57/5.27 │     +0.07 │
+├───────────────────────┼────────────────────────┼─────────┼───────────┼─────────────┼─────────────┼──────────────┼───────────────┼───────────┤
+│ Attack Aggregate      │ Unprotected pgvector   │   97.5% │     63.2% │       72.5% │       82.5% │   86.4% n=22 │     1.48/2.49 │           │
+│ Attack Aggregate      │ adk-memshield (RLS)    │    0.0% │      0.0% │        0.0% │        0.0% │  100.0% n=22 │    1.85/11.86 │     +0.37 │
+└───────────────────────┴────────────────────────┴─────────┴───────────┴─────────────┴─────────────┴──────────────┴───────────────┴───────────┘
+
+36 seed records across 3 tenants | 54 queries | top_k=3 | 1 latency samples/query | untimed warmup: 2 queries x 2 targets (674.72 ms) | namespace: arena_run_1929e1dd6055
+CI gate (--fail-on leak): PASS (exit 0)
+```
+
+---
+
 ## 0.2.0 runs (2026-11-16)
 
 All 0.2.0 numbers come from runs on 2026-11-16 (UTC) against **adk-memshield 0.2.0 installed from PyPI**. The eval, EXPLAIN and test outputs ran on the source of commit `00f5189` plus the version bump in the release commit; the prepared-mode outputs ran on `c4074a1` (the prepared-mode code has not changed since, apart from closing an extra pool). No run was adjusted, filtered or re-tried to reach a number.
