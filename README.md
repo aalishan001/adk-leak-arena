@@ -22,6 +22,15 @@ Other stores join the same run with `--targets`: Qdrant (payload filters), Mem0 
 
 *S5 (no SQL `WHERE` clause) as `alice_analyst`: the left target returns three unauthorized rows, including cross-tenant ones, and the agent repeats their canary tokens. The right target returns only rows Alice is entitled to: her own, plus tenant-shared rows at or below her clearance that are untagged or share a compartment with her. Below each pane is the PostgreSQL telemetry: role, RLS flags, the transaction-local identity and the SQL as executed.*
 
+## Live Hosted Demo
+
+A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1`, `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
+
+- **URL:** `https://adk-leak-arena-268336845218.asia-southeast1.run.app`
+- **Readiness check:** `GET /readyz` (`{"status":"ready","public_mode":true}`)
+
+Both targets connect as the non-bypass `memshield_app` role; the public service never receives `ARENA_ADMIN_DSN` and refuses to start if given an admin/owner/superuser login. See [`deploy/README.md`](deploy/README.md) and [`deploy/cloudrun/service.yaml`](deploy/cloudrun/service.yaml) for the AlloyDB Auth Proxy sidecar setup.
+
 ## What changed in 0.2.0
 
 - **More stores than two.** A `MemoryTarget` interface, with Qdrant and Mem0 OSS targets next to the pgvector pair. A mistake a store cannot express through its own API is **n/a**, never 0%. Any number of targets per run, executed concurrently, each run in its own schema and collections.
@@ -425,20 +434,39 @@ The console is 100% offline-ready (zero external CDNs, fonts, or scripts) and in
 Select the engine in the console header or with `--engine`. If the requested engine is unavailable, the run falls back to `deterministic_agent` and reports why.
 - `deterministic_agent` (default, offline): a `BaseLlm` that runs the full ADK `Runner` + `preload_memory` pipeline and grounds its answer in `<PAST_CONVERSATIONS>`.
 - `ollama_gemma`: local `gemma3:4b` via LiteLLM (`http://host.docker.internal:11434`). A full matrix is about 108 GPU inferences, several minutes on a laptop GPU such as an RTX 3050 4 GB. Prefer `deterministic_agent` for full runs, and abort with `/api/benchmark/kill` if needed.
-- `gemini_api`: cloud `gemini-3.8-flash` (override with `GEMINI_MODEL`) when `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is set. `gemini-2.5-flash`, the 0.1.0 default, reached its Vertex AI retirement date on 20 Oct 2026 ([model versions](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions), checked 16 Nov 2026). No Gemini run is recorded for 0.2.0 (no key was available in the build environment).
+- `gemini_api`: cloud Gemini API (`gemini-3.8-flash` default; override with `GEMINI_MODEL`) when `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is set. Calls are paced with `ARENA_GEMINI_RPM` (default `11.5`, under the 15 RPM free-tier limit) and retry HTTP 429 (`RetryInfo` delay) and HTTP 503 with exponential backoff before falling back. **Verified on `gemini-3.1-flash-lite` (free tier, 19 Nov 2026):** 108/108 live calls, 0 fallbacks, 0 HTTP 429s, 25 retried 503s, unprotected 97.5% (39/40) leaking vs `adk-memshield` 0.0% / 100.0% recall@3 ([`BENCHMARKS.md`](BENCHMARKS.md), raw output in `benchmarks/runs/2026-11-19/eval-gemini.txt`). `gemini-2.5-flash`, the 0.1.0 default, reached its Vertex AI retirement date on 20 Oct 2026 ([model versions](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions), checked 16 Nov 2026).
+
+### Optional `pre_write` hook (`ARENA_PRE_WRITE_HOOK`)
+
+To test `adk-memshield`'s tighten-only `pre_write` hook seam against S6 same-tier poisoning or custom write-time guards, set `ARENA_PRE_WRITE_HOOK=module:attr` (pointing to a callable `(identity, pending) -> Allow | Downlabel | Block`, or a zero-arg factory). It is **off by default** and **refused in `ARENA_PUBLIC_MODE=1`** so public deployments cannot dynamically load code. Any hook decision that attempts to widen access is rejected by `adk-memshield` (`ValueError`).
+
+---
+
+## Agent Skill (`leak-arena-audit`)
+
+This repo ships an [`agentskills.io`](https://agentskills.io)-compatible skill at [`skills/leak-arena-audit/`](https://github.com/aalishan001/adk-leak-arena/tree/main/skills/leak-arena-audit) (`SKILL.md`, `references/scenarios.md`, `references/ci.md`). It guides coding agents (Antigravity, Gemini CLI, and other Agent Skills-compatible tools) to run authorized `leak-arena eval` checks with synthetic data, read the `0`/`1`/`2` CI gate exit codes, map failing scenarios (`S1`–`S9`) to RLS/role/identity fixes, and re-verify.
+
+Install into a workspace:
+
+```bash
+mkdir -p .agents/skills
+cp -r skills/leak-arena-audit .agents/skills/
+```
+
+**Trigger verification:** tested in Antigravity alongside `memshield-tenant-isolation` across 10 prompts (6 positive, 4 negative): **10 of 10 correct**, with full rule compliance. Raw log: [`adk-memshield/benchmarks/runs/2026-11-19/skill-trigger-tests.md`](https://github.com/aalishan001/adk-memshield/blob/main/benchmarks/runs/2026-11-19/skill-trigger-tests.md).
 
 ---
 
 ## Known Limitations
 
-- **Same-tier shared poisoning (S6) is out of scope for RLS.** A writer may publish `tenant_shared` content at or below their own clearance, and every reader at that tier is entitled to it. Use write approval or content moderation.
+- **Same-tier shared poisoning (S6) is out of scope for RLS.** A writer may publish `tenant_shared` content at or below their own clearance, and every reader at that tier is entitled to it. Use write approval or a `pre_write` content guard (`ARENA_PRE_WRITE_HOOK`).
 - **S2's hijack rate is not tuned:** lures reach Rank #1 on 3 of 8 queries.
 - **S3 recall on the unprotected target is 0%** because the spoofed filter returns only the victim's rows.
 - **HNSW and filters.** With an HNSW index at 100k rows, a light caller's filtered search can return nothing: the index scan hands back `hnsw.ef_search` (40) candidates and the filter removes them all. This hits the unprotected table's correct app filter and memshield's RLS-only query shape alike; memshield's default search shape got an exact bitmap plan in this dataset. See [Scale](#scale-hnsw-and-the-prepared-connection-mode). Which plan the planner picks depends on the data; measure your own.
 - **Latency is noisy on Docker Desktop.** Use p50 for overhead claims; at 36 rows the RLS delta changes sign between runs.
-- **One web replica.** Run history (last 50 runs) and the single benchmark slot are in process memory and cleared on restart; the Kubernetes Deployment runs exactly one replica for that reason (`deploy/README.md`).
+- **One web replica.** Run history (last 50 runs) and the single benchmark slot are in process memory and cleared on restart; the Kubernetes Deployment and Cloud Run service run at most one instance (`deploy/README.md`).
 - **Not measured across agents.** The arena scores the storage channel (rows returned, canaries in the output), not agent-to-agent hand-offs; see [`docs/other-channel.md`](docs/other-channel.md).
-- **The full benchmark is verified only with `deterministic_agent`.** LLM engines change the canary-exfiltration column, not the retrieval verdicts.
+- **LLM engine scope:** the full S1–S6 + Control benchmark is verified on `deterministic_agent`, `ollama_gemma` (`gemma3:4b`, 0.1.0), and `gemini_api` (`gemini-3.1-flash-lite`, 19 Nov 2026, 0 fallbacks). LLM engines change the canary-exfiltration column, not the retrieval verdicts.
 - **The dataset is synthetic and hand-written** (36 rows, 54 queries). Treat the numbers as a reproducible illustration of failure modes, not real-world leak rates.
 
 ---
@@ -465,7 +493,7 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
-The suite (64 tests; `benchmarks/runs/2026-11-16/pytest.txt`) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
+The suite (66 tests at 0.2.1; 71 on `main`) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
 
 ---
 

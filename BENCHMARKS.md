@@ -1,5 +1,38 @@
 # Benchmarks: provenance for every published number
 
+## Memory Guard (private package) on S6 (2026-11-19)
+
+Live S6 (Same-Tier Shared Poisoning) comparison using the generic `ARENA_PRE_WRITE_HOOK` loader with the private `memshield-guard` package (`memshield_guard.hook:default_gemini_hook`, calling **`gemini-3.1-flash-lite`** via Gemini API, free tier, 0 fallbacks, 0 errors).
+
+- **Commands:**
+  - Guard OFF: `leak-arena eval --scenarios S6 --repeats 1 --format markdown`
+  - Guard ON: `ARENA_PRE_WRITE_HOOK=memshield_guard.hook:default_gemini_hook leak-arena eval --scenarios S6 --repeats 1 --format markdown` (with `PYTHONPATH=/guard/src`, `-e GEMINI_API_KEY -e GOOGLE_API_KEY -e GEMINI_MODEL`)
+- **Raw outputs:** [`benchmarks/runs/2026-11-19/eval-s6-guard-off.txt`](benchmarks/runs/2026-11-19/eval-s6-guard-off.txt) (`.json`), [`benchmarks/runs/2026-11-19/eval-s6-guard-on.txt`](benchmarks/runs/2026-11-19/eval-s6-guard-on.txt) (`.json`, `.stderr.txt` — all verified 0 matches for `GEMINI_API_KEY`).
+
+| Configuration | Target | Queries Leaking >=1 Row | Same-Tier Poison Retrieved | Authorized Recall@3 (n=6) | p50 / p95 SQL |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| Guard OFF (RLS only, known S6 boundary) | `Unprotected pgvector` | 0.0% | 100.0% | 100.0% | 4.13 / 12.11 ms |
+| Guard OFF (RLS only, known S6 boundary) | `adk-memshield (RLS)` | **0.0%** | 100.0% | 100.0% | 2.32 / 6.58 ms |
+| Guard ON (`gemini-3.1-flash-lite` `pre_write`) | `Unprotected pgvector` | 0.0% | 100.0% | 100.0% | 3.66 / 15.85 ms |
+| Guard ON (`gemini-3.1-flash-lite` `pre_write`) | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **100.0%** | 2.11 / 3.67 ms |
+
+All three S6 same-tier lures were blocked at write time by the Gemini Memory Guard before insertion into `memories`, dropping same-tier poison retrieval on `adk-memshield` from **100.0% to 0.0%** while preserving **100.0% authorized recall** (CI gate: PASS, exit 0).
+
+---
+
+## AlloyDB Express (PostgreSQL 18.4, 2026-11-19)
+
+Verified against Google Cloud **AlloyDB Express** (`projects/memshield-buildathon/locations/asia-southeast1/clusters/memshield-express/instances/primary`, PostgreSQL 18.4, `vector 0.8.7.google-1`, `alloydb_scann 0.1.4`, `google_ml_integration 1.6.5`), deployed behind Cloud Run (`https://adk-leak-arena-268336845218.asia-southeast1.run.app`, public read-only mode + AlloyDB Auth Proxy `1.18.0` sidecar).
+
+- **Posture & refusal ([`benchmarks/runs/2026-11-19/alloydb-posture.txt`](benchmarks/runs/2026-11-19/alloydb-posture.txt)):** `memshield_app` confirmed `rolsuper=False`, `rolbypassrls=False`, non-member of `alloydbsuperuser`/`postgres`, owns no tables; `memories` confirmed `relrowsecurity=True`, `relforcerowsecurity=True`; `inspect_rls_posture.ok=True`. Public-mode startup refused both `ARENA_ADMIN_DSN` and `postgres` as `ARENA_DB_DSN`.
+- **Full deterministic eval via Auth Proxy ([`benchmarks/runs/2026-11-19/eval-alloydb-express.txt`](benchmarks/runs/2026-11-19/eval-alloydb-express.txt)):** `leak-arena eval --repeats 1` (S1–S6 + Control, `unprotected` + `memshield`, own run namespace):
+  - Attack aggregate (S1–S5): unprotected **97.5% (39/40)** leaking, 63.2% row share, 72.5% rank-1 hijack, 87.5% canary exfil, 86.4% recall@3 (n=22) vs **`adk-memshield` 0.0% (0/40)** across all leak metrics and **100.0% recall@3 (n=22)**.
+  - Control & S6: 0.0% leaking, 100.0% recall@3 on both targets. CI gate: **PASS (exit 0)** in 23.83 s.
+  - Note: p50 latencies in the laptop-to-Singapore Auth Proxy run (149 ms unprotected vs 203 ms memshield) include Bengaluru-to-Singapore WAN RTT (~50 ms per round-trip).
+- **Live Cloud Run public URL ([`benchmarks/runs/2026-11-19/cloudrun-verify.txt`](benchmarks/runs/2026-11-19/cloudrun-verify.txt)):** `GET /readyz` returned `200` (`{"status":"ready","public_mode":true}`); S5 returned `unprotected=leak (3/3)` vs `memshield=isolated (0/3, rls_effective=True)` in **3.65 s** cold / **203 ms** warm (in-region SQL: 4.92 ms unprotected vs 11.08 ms memshield); `POST /api/reset` returned `403`.
+
+---
+
 ## Gemini engine (2026-11-19)
 
 Live Gemini API confirmation run on **`gemini-3.1-flash-lite`** (free tier, 15 requests/min quota) via `GEMINI_MODEL=gemini-3.1-flash-lite` (`gemini-3.8-flash` and other 3.x Flash models returned HTTP 503 high demand at the time of the run, and `gemini-2.5-flash` returned HTTP 404). To respect the free-tier rate limit, the `gemini_api` engine paces calls across concurrent targets at `11.5` requests/min by default (`ARENA_GEMINI_RPM`), honors HTTP 429 `RetryInfo` delays, and retries transient HTTP 503 responses with exponential backoff (`ARENA_GEMINI_MAX_RETRIES=6`).

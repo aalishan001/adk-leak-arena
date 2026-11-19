@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Hosted Cloud Run + AlloyDB Express deployment (`deploy/cloudrun/service.yaml`, `deploy/README.md`):** read-only public console (`ARENA_PUBLIC_MODE=1`, `minScale=0`, `maxScale=1`) with an AlloyDB Auth Proxy `1.18.0` sidecar connected as the non-bypass `memshield_app` role (dedicated least-privilege SA holding `arena-db-dsn` only). Verified live on AlloyDB Express PostgreSQL 18.4 (`asia-southeast1`): `/readyz` 200, S5 LEAK vs ISOLATED in 3.65 s cold / 203 ms warm, full `leak-arena eval` 97.5% (39/40) vs 0.0% (0/40) leaking and 100.0% recall (`benchmarks/runs/2026-11-19/{alloydb-posture,eval-alloydb-express,cloudrun-verify}.txt`).
+- **Gemini engine pacing, retries, and recorded run:** `ARENA_GEMINI_RPM` (default `11.5`) paces requests across concurrent targets under free-tier limits; retries HTTP 429 (`RetryInfo` delay) and transient HTTP 503 with exponential backoff (`ARENA_GEMINI_MAX_RETRIES=6`). Verified on `gemini-3.1-flash-lite` (free tier, 108/108 live calls, 0 fallbacks, 0 HTTP 429s, 25 retried 503s; `benchmarks/runs/2026-11-19/eval-gemini.{txt,stderr.txt}`).
+- **Optional `ARENA_PRE_WRITE_HOOK=module:attr` loader:** passes an external tighten-only `adk-memshield` `pre_write` hook into the `memshield` target (off by default, refused in `ARENA_PUBLIC_MODE=1`). Covered by 2 new tests in `tests/test_v020.py` (71 tests passing). Verified live on S6 with the private Gemini Memory Guard (`gemini-3.1-flash-lite`): same-tier poison retrieved on `adk-memshield` dropped from **100.0% to 0.0%** while keeping **100.0% authorized recall** (`benchmarks/runs/2026-11-19/eval-s6-guard-{off,on}.txt`).
+- **Agent Skill (`skills/leak-arena-audit/`):** `agentskills.io`-format skill (`SKILL.md`, `references/scenarios.md`, `references/ci.md`) verified in Antigravity (10 of 10 trigger tests correct alongside `memshield-tenant-isolation`).
+
 ## [0.2.1] - 2026-11-17
 
 ### Security
