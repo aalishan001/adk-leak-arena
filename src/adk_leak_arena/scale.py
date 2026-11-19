@@ -28,7 +28,7 @@ from adk_memshield import MemShieldMemoryService
 from google.adk.memory.memory_entry import MemoryEntry
 from google.genai import types
 
-from .config import ArenaConfig
+from .config import ArenaConfig, load_pre_write_hook
 from .dataset import BASELINE_SEED_SIZE, SCENARIO_FIXTURES, SeedRecord
 from .embedding import get_cached_embed_fn
 from .unprotected_service import UnprotectedPgVectorMemoryService
@@ -436,6 +436,7 @@ def _fixture_entry(rec: SeedRecord, tag: str) -> MemoryEntry:
 
 def _plant_records(config: ArenaConfig, records: Iterable[SeedRecord], tag: str) -> None:
     embed_fn = get_cached_embed_fn(config.embedding_model, config.embedding_dim)
+    pre_write = load_pre_write_hook(config)
 
     async def _plant() -> None:
         for rec in records:
@@ -446,6 +447,7 @@ def _plant_records(config: ArenaConfig, records: Iterable[SeedRecord], tag: str)
                 tenant_id=rec.tenant_id,
                 agent_clearance=rec.min_clearance,
                 compartments=list(rec.compartments),
+                pre_write=pre_write,
                 embed_fn=embed_fn,
             )
             await ms.add_memory(app_name=config.app_name, user_id=rec.user_id, memories=[_fixture_entry(rec, tag)])

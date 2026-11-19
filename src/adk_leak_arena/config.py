@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 from dataclasses import dataclass, field, replace
+from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 # Gemini API model used by `--engine gemini_api` unless GEMINI_MODEL overrides it. A current
@@ -101,6 +103,9 @@ class ArenaConfig:
     # Read-only console for public deployments: inject, reset, rescale, benchmark jobs and
     # history deletion return 403 (and are hidden in the console); attacks still run.
     public_mode: bool = field(default_factory=lambda: _env_flag("ARENA_PUBLIC_MODE", "0"))
+    # Optional generic pre_write hook (`module:attr`) passed to adk-memshield. Off by default;
+    # refused when public_mode is enabled so a public service never loads external code.
+    pre_write_hook: str = field(default_factory=lambda: os.environ.get("ARENA_PRE_WRITE_HOOK", "").strip())
     # Postgres schema holding this run's tables ("" = the default search_path).
     schema: str = ""
     top_k: int = 3
@@ -115,3 +120,22 @@ class ArenaConfig:
             db_dsn=with_search_path(self.db_dsn, schema),
             admin_dsn=with_search_path(self.admin_dsn, schema),
         )
+
+
+def load_pre_write_hook(config: ArenaConfig) -> Any | None:
+    """Resolve optional ``ARENA_PRE_WRITE_HOOK`` (``module:attr``); refused in public mode."""
+    spec = (config.pre_write_hook or "").strip()
+    if not spec:
+        return None
+    if config.public_mode:
+        raise ValueError("ARENA_PRE_WRITE_HOOK is refused when ARENA_PUBLIC_MODE=1")
+    if ":" not in spec:
+        raise ValueError(f"ARENA_PRE_WRITE_HOOK must be 'module:attr', got {spec!r}")
+    mod_name, attr_name = spec.split(":", 1)
+    if not mod_name or not attr_name:
+        raise ValueError(f"ARENA_PRE_WRITE_HOOK must be 'module:attr', got {spec!r}")
+    module = importlib.import_module(mod_name)
+    hook = getattr(module, attr_name)
+    if not callable(hook):
+        raise TypeError(f"ARENA_PRE_WRITE_HOOK {spec!r} is not callable")
+    return hook

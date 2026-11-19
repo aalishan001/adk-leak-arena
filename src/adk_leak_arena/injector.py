@@ -24,7 +24,7 @@ from adk_memshield import MemShieldMemoryService
 from google.adk.memory.memory_entry import MemoryEntry
 from google.genai import types
 
-from .config import ArenaConfig
+from .config import ArenaConfig, load_pre_write_hook
 from .dataset import INJECTOR_PERSONAS, CanaryCarrier, register_injected_canary
 from .embedding import get_cached_embed_fn
 from .unprotected_service import UnprotectedPgVectorMemoryService
@@ -131,6 +131,7 @@ async def inject_memory(
         dsn=config.db_dsn,
         tenant_id=actor.tenant_id,
         agent_clearance=actor.clearance,
+        pre_write=load_pre_write_hook(config),
         embed_fn=embed_fn,
     )
     right: dict[str, Any] = {"target": "memshield"}
@@ -142,6 +143,16 @@ async def inject_memory(
             await ms.add_memory(app_name=config.app_name, user_id=actor.user_id, memories=[entry])
             right["sql"] = ms.last_query_telemetry.sql if ms.last_query_telemetry else ""
             row_id = entry.id
+            if row_id is None and ms.last_query_telemetry and ms.last_query_telemetry.blocked_writes:
+                right.update(
+                    accepted=False,
+                    row_id=None,
+                    error="blocked by pre_write hook",
+                    error_class="PreWriteBlocked",
+                    sqlstate=None,
+                )
+            else:
+                right.update(accepted=True, row_id=row_id, error=None, error_class=None, sqlstate=None)
         else:
             right["path"] = "MemShieldMemoryService.rls_transaction(actor) + INSERT with claimed owner"
             right["sql"] = _SPOOF_INSERT_SQL
@@ -166,7 +177,7 @@ async def inject_memory(
                     return str(row[0]) if row else None
 
             row_id = await asyncio.to_thread(_spoofed_insert)
-        right.update(accepted=True, row_id=row_id, error=None, error_class=None, sqlstate=None)
+            right.update(accepted=True, row_id=row_id, error=None, error_class=None, sqlstate=None)
     except psycopg.Error as exc:
         right.update(accepted=False, row_id=None, **_error_payload(exc))
     right["latency_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)

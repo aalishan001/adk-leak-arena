@@ -70,6 +70,10 @@ def check_public_posture(cfg: ArenaConfig) -> dict[str, Any]:
             "ARENA_PUBLIC_MODE=1 must not be given ARENA_ADMIN_DSN: seed with `leak-arena seed` "
             "in a separate job and give the web process only the application role"
         )
+    if cfg.pre_write_hook:
+        raise PublicModeConfigurationError(
+            "ARENA_PUBLIC_MODE=1 refuses ARENA_PRE_WRITE_HOOK: a public service must not load external hook code"
+        )
     with psycopg.connect(cfg.db_dsn, connect_timeout=5) as conn:
         role, is_super, bypass, owns = conn.execute(
             """

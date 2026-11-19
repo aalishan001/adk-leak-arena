@@ -41,7 +41,7 @@ from google.adk.memory.base_memory_service import BaseMemoryService, SearchMemor
 from google.adk.memory.memory_entry import MemoryEntry
 from google.genai import types
 
-from .config import ArenaConfig
+from .config import ArenaConfig, load_pre_write_hook
 from .dataset import CallerPersona, SeedRecord
 
 # Mem0 OSS sends usage telemetry to PostHog unless this is off; the arena never phones home.
@@ -318,6 +318,7 @@ class MemShieldTarget(MemoryTarget):
         # decides what comes back. Its default search would otherwise filter by itself.
         rls_only = mistake.simulate_missing_app_filter or mistake.failure_mode in RLS_ONLY_MODES
         pool = self._s9_pool() if mistake.failure_mode == "pooled_session_bleed" else None
+        pre_write = load_pre_write_hook(self.config)
         service = MemShieldMemoryService(
             config=MemShieldConfig(
                 dsn=self.dsn,
@@ -328,6 +329,7 @@ class MemShieldTarget(MemoryTarget):
                 table_name="memories",
                 simulate_missing_app_filter=rls_only,
                 identity_verifier=verifier,
+                pre_write=pre_write,
             ),
             embed_fn=embed_fn,
             pool=pool,

@@ -589,3 +589,60 @@ def test_gemini_pipeline_retries_429_without_falling_back(monkeypatch: pytest.Mo
     assert res.engine_fallback_reason is None
     assert "Verified Gemini answer after retry." in res.agent_output
     assert any(abs(s - 3.5) < 1e-6 for s in slept)
+
+
+# ----------------------------------------------------------------------------- generic pre_write hook loader
+def _dummy_block_hook(identity, pending):
+    from adk_memshield.hooks import Block
+
+    return Block("test-block")
+
+
+def _dummy_widen_hook(identity, pending):
+    from adk_memshield.hooks import Downlabel
+
+    return Downlabel(scope="tenant_shared")
+
+
+def test_pre_write_hook_loader_defaults_off_and_refuses_public_mode() -> None:
+    from adk_leak_arena.config import load_pre_write_hook
+    from adk_leak_arena.server import PublicModeConfigurationError, check_public_posture
+
+    assert load_pre_write_hook(ArenaConfig()) is None
+
+    pub_cfg = ArenaConfig(
+        public_mode=True,
+        admin_dsn="",
+        pre_write_hook=f"{__name__}:_dummy_block_hook",
+    )
+    with pytest.raises(ValueError, match="public mode|ARENA_PUBLIC_MODE"):
+        load_pre_write_hook(pub_cfg)
+    with pytest.raises(PublicModeConfigurationError, match="ARENA_PRE_WRITE_HOOK"):
+        check_public_posture(pub_cfg)
+
+
+def test_pre_write_hook_tighten_and_widen_enforcement() -> None:
+    from adk_memshield.hooks import PendingMemory, apply_downlabel
+    from adk_memshield.identity import MemShieldIdentity
+    from adk_leak_arena.config import load_pre_write_hook
+    from adk_leak_arena.evaluator import run_full_benchmark
+
+    cfg_block = ArenaConfig(pre_write_hook=f"{__name__}:_dummy_block_hook")
+    hook = load_pre_write_hook(cfg_block)
+    assert callable(hook) and hook.__name__ == "_dummy_block_hook"
+
+    # S6 with a blocking pre_write hook drops memshield's same-tier poison retrieval to 0%.
+    report = asyncio.run(
+        run_full_benchmark(cfg_block, scenarios=("S6",), repeats=1, warmup=False)
+    )
+    s6_row = report["scenarios"][0]
+    assert s6_row["unprotected"]["same_tier_poison_pct"] == 100.0
+    assert s6_row["memshield"]["same_tier_poison_pct"] == 0.0
+
+    # A widening decision loaded via the hook is refused by memshield's apply_downlabel.
+    cfg_widen = ArenaConfig(pre_write_hook=f"{__name__}:_dummy_widen_hook")
+    widen_hook = load_pre_write_hook(cfg_widen)
+    pending = PendingMemory(text="private note", author="user", scope="private", min_clearance=1)
+    ident = MemShieldIdentity(tenant_id="acme_corp", user_id="alice_analyst", clearance=1)
+    with pytest.raises(ValueError, match="widen"):
+        apply_downlabel(pending, widen_hook(ident, pending))
