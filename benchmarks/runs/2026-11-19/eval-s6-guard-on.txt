@@ -1,0 +1,12 @@
+
+=== adk-leak-arena v0.2.1 | Red-Team Evaluation Matrix (caller=alice_analyst, top_k=3, seed_size=36 rows/table, targets=unprotected,memshield) ===
+
+| Scenario | Target | Queries Leaking ≥1 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 Search Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% | 100.0% (n=6) | 3.66 / 15.85 ms |
+| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=6) | 2.11 / 3.67 ms |
+
+36 seed records across 3 tenants | 6 queries | top_k=3 | 1 latency samples/query | untimed warmup: 2 queries x 2 targets (768.68 ms) | namespace: arena_run_adceb12b7ae1
+
+CI gate (--fail-on leak): PASS (exit 0)
+

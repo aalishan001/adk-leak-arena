@@ -1,0 +1,189 @@
+{
+  "caller_id": "alice_analyst",
+  "engine": "deterministic_agent",
+  "top_k": 3,
+  "seed_size": 36,
+  "elapsed_ms": 12328.05,
+  "steps_completed": 8,
+  "total_steps": 8,
+  "targets": [
+    {
+      "name": "unprotected",
+      "label": "Unprotected pgvector",
+      "protected": false,
+      "version": "",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": true,
+        "database_enforced": false
+      }
+    },
+    {
+      "name": "memshield",
+      "label": "adk-memshield (RLS)",
+      "protected": true,
+      "version": "0.2.0",
+      "expects_refusal": false,
+      "capabilities": {
+        "tenant": true,
+        "user": true,
+        "clearance": true,
+        "compartments": true,
+        "sql_session": true,
+        "database_enforced": true
+      }
+    }
+  ],
+  "methodology": {
+    "seed_records": 36,
+    "seed_size": 36,
+    "tenants": [
+      "acme_corp",
+      "globex_inc",
+      "initech_labs"
+    ],
+    "top_k": 3,
+    "targets": [
+      "unprotected",
+      "memshield"
+    ],
+    "namespace": "arena_run_61033fbeec34",
+    "scenarios": [
+      "S6"
+    ],
+    "queries_per_scenario": {
+      "S6": 6
+    },
+    "latency_repeats_per_query": 1,
+    "warmup": {
+      "queries": 2,
+      "targets": [
+        "unprotected",
+        "memshield"
+      ],
+      "elapsed_ms": 572.82
+    },
+    "latency_definition": "Wall time of the target's search call (for PostgreSQL targets: pooled connection checkout + transaction + search SQL, adk-memshield including its set_config round-trip; for Qdrant: the client search call), query embedding excluded; for Mem0: the arena adapter's two Mem0 searches, which embed the query themselves, so embedding is included.",
+    "recall_definition": "Recall@K over queries whose relevant seed records include at least one the caller may read; pure cross-user/cross-tenant exfiltration probes are excluded.",
+    "boundary_definition": "S6 is reported separately: authorized same-tier shared rows written by an adversary are retrieved by every correctly filtered target and excluded from the attack aggregate.",
+    "not_applicable": "A target that cannot express a scenario's application mistake through its own API reports n/a for that scenario and is left out of its aggregate."
+  },
+  "scenarios": [
+    {
+      "id": "S6",
+      "short_label": "S6: Same-Tier Shared Poisoning",
+      "title": "Scenario 6 \u2014 Same-Tier Shared Memory Poisoning (Known RLS Boundary)",
+      "vulnerability_class": "Boundary: Authorized Same-Tier Write (needs content moderation)",
+      "failure_mode": "same_tier_shared_poisoning",
+      "simulate_missing_app_filter": false,
+      "boundary": true,
+      "targets": {
+        "unprotected": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 0.0,
+          "leaked_row_share_pct": 0.0,
+          "rank_1_hijack_pct": 0.0,
+          "canary_exfiltration_pct": 0.0,
+          "same_tier_poison_pct": 100.0,
+          "recall_eligible_queries": 6,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 6,
+          "p50_latency_ms": 5.44,
+          "p95_latency_ms": 13.47,
+          "applicable": true,
+          "identity_refusals": 0
+        },
+        "memshield": {
+          "queries_evaluated": 6,
+          "queries_leaking_pct": 0.0,
+          "leaked_row_share_pct": 0.0,
+          "rank_1_hijack_pct": 0.0,
+          "canary_exfiltration_pct": 0.0,
+          "same_tier_poison_pct": 0.0,
+          "recall_eligible_queries": 6,
+          "authorized_recall_pct": 100.0,
+          "retrieval_errors": 0,
+          "latency_samples": 6,
+          "p50_latency_ms": 2.68,
+          "p95_latency_ms": 6.26,
+          "applicable": true,
+          "identity_refusals": 0
+        }
+      },
+      "unprotected": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 0.0,
+        "leaked_row_share_pct": 0.0,
+        "rank_1_hijack_pct": 0.0,
+        "canary_exfiltration_pct": 0.0,
+        "same_tier_poison_pct": 100.0,
+        "recall_eligible_queries": 6,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 6,
+        "p50_latency_ms": 5.44,
+        "p95_latency_ms": 13.47,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "memshield": {
+        "queries_evaluated": 6,
+        "queries_leaking_pct": 0.0,
+        "leaked_row_share_pct": 0.0,
+        "rank_1_hijack_pct": 0.0,
+        "canary_exfiltration_pct": 0.0,
+        "same_tier_poison_pct": 0.0,
+        "recall_eligible_queries": 6,
+        "authorized_recall_pct": 100.0,
+        "retrieval_errors": 0,
+        "latency_samples": 6,
+        "p50_latency_ms": 2.68,
+        "p95_latency_ms": 6.26,
+        "applicable": true,
+        "identity_refusals": 0
+      },
+      "rls_delta_p50_ms": -2.76,
+      "rls_delta_p95_ms": -7.21
+    }
+  ],
+  "aggregate_attacks": null,
+  "performance": {
+    "targets": {
+      "unprotected": {
+        "p50_ms": 5.439,
+        "p95_ms": 13.472,
+        "samples": 6
+      },
+      "memshield": {
+        "p50_ms": 2.68,
+        "p95_ms": 6.261,
+        "samples": 6
+      }
+    },
+    "mean_agent_turn_ms": 32.68,
+    "query_executions": 6,
+    "eval_seconds": 11.755,
+    "throughput_qps": 0.51,
+    "unprotected_p50_ms": 5.439,
+    "unprotected_p95_ms": 13.472,
+    "memshield_p50_ms": 2.68,
+    "memshield_p95_ms": 6.261,
+    "p50_delta_ms": -2.759,
+    "p95_delta_ms": -7.211,
+    "p50_delta_pct": -50.7,
+    "rls_equal_or_faster_p50": true
+  },
+  "markdown_table": "| Scenario | Target | Queries Leaking \u22651 Row | Leaked Row Share | Rank-1 Hijack | Canary Exfil (Output) | Same-Tier Poison Retrieved | Authorized Recall@3 (eligible n) | p50 / p95 Search Latency |\n| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `Unprotected pgvector` | 0.0% | 0.0% | 0.0% | 0.0% | 100.0% | 100.0% (n=6) | 5.44 / 13.47 ms |\n| **S6: Same-Tier Shared Poisoning (boundary, excluded from aggregate)** | `adk-memshield (RLS)` | **0.0%** | **0.0%** | **0.0%** | **0.0%** | 0.0% | 100.0% (n=6) | 2.68 / 6.26 ms |",
+  "gate": {
+    "exit_code": 0,
+    "fail_on": "leak",
+    "min_recall": null,
+    "reasons": []
+  },
+  "scale": null
+}
