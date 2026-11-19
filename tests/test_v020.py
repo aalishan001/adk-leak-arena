@@ -431,3 +431,161 @@ def test_prepared_mode_pins_custom_plans() -> None:
     with psycopg.connect(ArenaConfig().admin_dsn) as conn:
         left = conn.execute("SELECT count(*) FROM pg_namespace WHERE nspname = %s", (report["namespace"],)).fetchone()[0]
     assert left == 0
+
+
+# ----------------------------------------------------------------------------- gemini pacing & retry
+class _FakeApiError(Exception):
+    def __init__(self, code: int, details: dict, message: str = "") -> None:
+        super().__init__(message or f"{code} {details}")
+        self.code = code
+        self.details = details
+
+
+def test_gemini_retry_info_parses_429_503_and_rejects_fatal() -> None:
+    from adk_leak_arena.runner_pair import _gemini_retry_info
+
+    # Wrapped 429 with both RetryInfo ('27s') and precise message ('27.8s').
+    inner_429 = _FakeApiError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "Quota exceeded.\nPlease retry in 27.8s.",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}],
+                    },
+                    {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "27s"},
+                ],
+            }
+        },
+    )
+    try:
+        raise RuntimeError("adk wrapper") from inner_429
+    except RuntimeError as wrapped:
+        retryable, delay, reason = _gemini_retry_info(wrapped, 0)
+    assert retryable is True
+    assert reason == "HTTP 429"
+    assert abs(delay - 28.8) < 1e-6
+
+    # Daily quota 429 must not retry.
+    daily_429 = _FakeApiError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}],
+                    }
+                ],
+            }
+        },
+    )
+    assert _gemini_retry_info(daily_429, 0)[0] is False
+
+    # 503 retries with exponential backoff.
+    err_503 = _FakeApiError(503, {"error": {"code": 503, "status": "UNAVAILABLE"}})
+    r0, d0, reason0 = _gemini_retry_info(err_503, 0)
+    r1, d1, _ = _gemini_retry_info(err_503, 1)
+    assert r0 and r1 and reason0 == "HTTP 503" and d1 > d0
+
+    # 404 is fatal (no retry).
+    err_404 = _FakeApiError(404, {"error": {"code": 404, "status": "NOT_FOUND"}})
+    assert _gemini_retry_info(err_404, 0)[0] is False
+
+
+def test_gemini_rate_limiter_paces_concurrent_callers() -> None:
+    import time
+
+    from adk_leak_arena.runner_pair import _GeminiRateLimiter
+
+    limiter = _GeminiRateLimiter()
+
+    async def _run() -> list[float]:
+        stamps: list[float] = []
+
+        async def _worker() -> None:
+            await limiter.acquire(1200.0)  # 0.05s interval
+            stamps.append(time.monotonic())
+
+        await asyncio.gather(_worker(), _worker(), _worker())
+        return sorted(stamps)
+
+    stamps = asyncio.run(_run())
+    assert stamps[2] - stamps[0] >= 0.08
+
+
+def test_gemini_pipeline_retries_429_without_falling_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from adk_leak_arena import runner_pair
+    from google.adk.memory.base_memory_service import SearchMemoryResponse
+    from google.genai import types
+
+    runner_pair._GEMINI_PACE.reset()
+    slept: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(runner_pair.asyncio, "sleep", _fake_sleep)
+
+    attempts = {"count": 0}
+
+    class _FakeEvent:
+        def __init__(self, text: str) -> None:
+            self.content = types.Content(role="model", parts=[types.Part(text=text)])
+
+    class _FakeRunner:
+        def __init__(self, **kwargs) -> None:
+            self._kwargs = kwargs
+
+        async def run_async(self, **_kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise _FakeApiError(
+                    429,
+                    {
+                        "error": {
+                            "code": 429,
+                            "message": "Please retry in 2.5s.",
+                            "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "2s"}],
+                        }
+                    },
+                )
+            yield _FakeEvent("Verified Gemini answer after retry.")
+
+    monkeypatch.setattr(runner_pair, "Runner", _FakeRunner)
+
+    class _StubMemoryService:
+        last_query_telemetry = None
+        failure_mode = "control"
+
+        async def search_memory(self, *, app_name: str, user_id: str, query: str) -> SearchMemoryResponse:
+            return SearchMemoryResponse(memories=[])
+
+    cfg = ArenaConfig(gemini_api_key="not-a-real-key", gemini_model="gemini-3.1-flash-lite", gemini_rpm=0.0)
+    res = asyncio.run(
+        runner_pair._run_single_adk_pipeline(
+            target_key="memshield",
+            target_label="adk-memshield (RLS)",
+            memory_service=_StubMemoryService(),
+            config=cfg,
+            caller_tenant_id="acme_corp",
+            caller_user_id="alice_analyst",
+            caller_clearance=1,
+            query="hello",
+            engine="gemini_api",
+            relevant_keys=None,
+            ollama_status=None,
+            db_posture={"ok": False},
+            protected=True,
+        )
+    )
+    assert attempts["count"] == 2
+    assert res.engine_used == "gemini_api (gemini-3.1-flash-lite)"
+    assert res.engine_fallback_reason is None
+    assert "Verified Gemini answer after retry." in res.agent_output
+    assert any(abs(s - 3.5) < 1e-6 for s in slept)

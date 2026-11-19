@@ -73,6 +73,13 @@ class ArenaConfig:
     gemini_model: str = field(
         default_factory=lambda: os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     )
+    # Pacing and retry settings for `--engine gemini_api` (free-tier RPM headroom; 0 disables).
+    gemini_rpm: float = field(
+        default_factory=lambda: max(0.0, float(os.environ.get("ARENA_GEMINI_RPM", "11.5")))
+    )
+    gemini_max_retries: int = field(
+        default_factory=lambda: max(0, int(os.environ.get("ARENA_GEMINI_MAX_RETRIES", "6")))
+    )
     # Qdrant server for the `qdrant` and `mem0` targets.
     qdrant_url: str = field(
         default_factory=lambda: os.environ.get("ARENA_QDRANT_URL", "http://localhost:56333")

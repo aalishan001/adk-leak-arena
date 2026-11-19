@@ -69,6 +69,195 @@ _PAST_CONV_RE = re.compile(
 _DB_POSTURE: dict[str, dict[str, Any]] = {}  # per DSN (run-scoped schemas differ)
 _DB_POSTURE_LOCK = threading.Lock()
 
+_RETRY_DELAY_FIELD_RE = re.compile(r"""retryDelay['"]?\s*[:=]\s*['"]?([0-9]+(?:\.[0-9]+)?(?:ms|s))""", re.IGNORECASE)
+_RETRY_IN_MSG_RE = re.compile(r"Please retry in\s+([0-9]+(?:\.[0-9]+)?)\s*s\b", re.IGNORECASE)
+_HTTP_429_RE = re.compile(r"\b429\b.*(?:RESOURCE_EXHAUSTED|rate[- ]?limit|quota)", re.IGNORECASE | re.DOTALL)
+_HTTP_503_RE = re.compile(r"\b503\b.*(?:UNAVAILABLE|high demand|overloaded)", re.IGNORECASE | re.DOTALL)
+_DAILY_QUOTA_RE = re.compile(r"GenerateRequestsPerDay|PerDay", re.IGNORECASE)
+
+
+class _GeminiRateLimiter:
+    """Process-wide monotonic slot pacer safe across concurrent tasks and event loops."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next_allowed: float = 0.0
+
+    async def acquire(self, rpm: float) -> float:
+        """Wait until the next paced slot for ``rpm`` requests/min is open, then claim it."""
+        if rpm <= 0:
+            return 0.0
+        min_interval = 60.0 / rpm
+        total_wait = 0.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                if now >= self._next_allowed:
+                    self._next_allowed = now + min_interval
+                    return total_wait
+                wait = self._next_allowed - now
+            await asyncio.sleep(wait)
+            total_wait += wait
+
+    def defer(self, delay_s: float) -> None:
+        """Push the next allowed slot forward by ``delay_s`` so sibling tasks hold off too."""
+        if delay_s <= 0:
+            return
+        with self._lock:
+            target = time.monotonic() + delay_s
+            if target > self._next_allowed:
+                self._next_allowed = target
+
+    def reset(self) -> None:
+        with self._lock:
+            self._next_allowed = 0.0
+
+
+_GEMINI_PACE = _GeminiRateLimiter()
+
+
+def _parse_duration_seconds(raw: Any) -> float | None:
+    """Parse a protobuf Duration string (e.g. '27s', '27.8s', '500ms') or number into seconds."""
+    if isinstance(raw, (int, float)):
+        return float(raw) if raw >= 0 else None
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().lower()
+    if s.endswith("ms"):
+        try:
+            return float(s[:-2]) / 1000.0
+        except ValueError:
+            return None
+    if s.endswith("s"):
+        try:
+            return float(s[:-1])
+        except ValueError:
+            return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _iter_exception_chain(exc: BaseException):
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        yield cur
+        cur = cur.__cause__ or cur.__context__
+
+
+def _extract_retry_info_delay(err: BaseException) -> float | None:
+    """Extract RetryInfo / Retry-After / message retry delay in seconds, if present."""
+    candidates: list[float] = []
+
+    details = getattr(err, "details", None)
+    if isinstance(details, dict):
+        error_obj = details.get("error") if isinstance(details.get("error"), dict) else details
+        detail_items = error_obj.get("details") if isinstance(error_obj, dict) else None
+        if isinstance(detail_items, list):
+            for item in detail_items:
+                if not isinstance(item, dict):
+                    continue
+                if "RetryInfo" in str(item.get("@type", "")):
+                    parsed = _parse_duration_seconds(item.get("retryDelay"))
+                    if parsed is not None:
+                        candidates.append(parsed)
+        msg = error_obj.get("message") if isinstance(error_obj, dict) else None
+        if isinstance(msg, str):
+            m = _RETRY_IN_MSG_RE.search(msg)
+            if m:
+                candidates.append(float(m.group(1)))
+
+    resp = getattr(err, "response", None)
+    headers = getattr(resp, "headers", None)
+    if headers is not None:
+        retry_after = headers.get("retry-after") or headers.get("Retry-After")
+        if retry_after is not None:
+            parsed = _parse_duration_seconds(retry_after)
+            if parsed is not None:
+                candidates.append(parsed)
+
+    text = str(err)
+    for m in _RETRY_DELAY_FIELD_RE.finditer(text):
+        parsed = _parse_duration_seconds(m.group(1))
+        if parsed is not None:
+            candidates.append(parsed)
+    for m in _RETRY_IN_MSG_RE.finditer(text):
+        candidates.append(float(m.group(1)))
+
+    return max(candidates) if candidates else None
+
+
+def _is_daily_quota_error(err: BaseException) -> bool:
+    details = getattr(err, "details", None)
+    if isinstance(details, dict):
+        error_obj = details.get("error") if isinstance(details.get("error"), dict) else details
+        detail_items = error_obj.get("details") if isinstance(error_obj, dict) else None
+        if isinstance(detail_items, list):
+            for item in detail_items:
+                if not isinstance(item, dict):
+                    continue
+                for viol in item.get("violations", []) or []:
+                    if isinstance(viol, dict) and _DAILY_QUOTA_RE.search(str(viol.get("quotaId", ""))):
+                        return True
+    return bool(_DAILY_QUOTA_RE.search(str(err)))
+
+
+def _gemini_retry_info(exc: BaseException, attempt: int) -> tuple[bool, float, str]:
+    """Classify a Gemini API error and compute the wait delay before retrying.
+
+    Returns ``(retryable, delay_seconds, reason)``. HTTP 429 respects ``RetryInfo`` (unless
+    the error is a daily quota limit); HTTP 503 retries with exponential backoff.
+    """
+    status_code: int | None = None
+    explicit_delay: float | None = None
+
+    for err in _iter_exception_chain(exc):
+        code = getattr(err, "code", None)
+        if not isinstance(code, int):
+            code = getattr(err, "status_code", None)
+        if not isinstance(code, int):
+            details = getattr(err, "details", None)
+            if isinstance(details, dict):
+                err_obj = details.get("error")
+                if isinstance(err_obj, dict) and isinstance(err_obj.get("code"), int):
+                    code = err_obj["code"]
+        if not isinstance(code, int):
+            text = str(err)
+            if _HTTP_429_RE.search(text):
+                code = 429
+            elif _HTTP_503_RE.search(text):
+                code = 503
+
+        if code == 429:
+            if _is_daily_quota_error(err):
+                return False, 0.0, "HTTP 429 daily quota"
+            status_code = 429
+            d = _extract_retry_info_delay(err)
+            if d is not None:
+                explicit_delay = max(explicit_delay or 0.0, d)
+        elif code == 503 and status_code is None:
+            status_code = 503
+            d = _extract_retry_info_delay(err)
+            if d is not None:
+                explicit_delay = max(explicit_delay or 0.0, d)
+
+    if status_code == 429:
+        if explicit_delay is not None:
+            delay = min(120.0, max(1.0, explicit_delay + 1.0))
+        else:
+            delay = min(65.0, 10.0 * (2**attempt))
+        return True, delay, "HTTP 429"
+    if status_code == 503:
+        if explicit_delay is not None:
+            delay = min(120.0, max(1.0, explicit_delay + 1.0))
+        else:
+            delay = min(60.0, 4.0 * (2**attempt))
+        return True, delay, "HTTP 503"
+    return False, 0.0, ""
+
 
 def _extract_preloaded_memories_from_request(llm_request: LlmRequest) -> list[str]:
     """Extract memory lines injected by Google ADK's `preload_memory_tool` into `LlmRequest`."""
@@ -657,9 +846,33 @@ async def _run_single_adk_pipeline(
                         output_chunks.append(part.text.strip())
         return "\n".join(c for c in output_chunks if c)
 
+    async def _invoke_with_gemini_retry(active_model: BaseLlm | str) -> str:
+        if engine != "gemini_api" or isinstance(active_model, DeterministicAdkLlm):
+            return await _invoke_runner(active_model)
+        max_retries = max(0, int(config.gemini_max_retries))
+        for attempt in range(max_retries + 1):
+            await _GEMINI_PACE.acquire(config.gemini_rpm)
+            try:
+                return await _invoke_runner(active_model)
+            except Exception as exc:
+                retryable, delay, reason = _gemini_retry_info(exc, attempt)
+                if not retryable or attempt >= max_retries:
+                    raise
+                logger.warning(
+                    "Gemini API %s on %s (attempt %d/%d); waiting %.1fs before retry",
+                    reason,
+                    target_key,
+                    attempt + 1,
+                    max_retries + 1,
+                    delay,
+                )
+                _GEMINI_PACE.defer(delay)
+                await asyncio.sleep(delay)
+        raise RuntimeError("unreachable")  # pragma: no cover
+
     t0 = time.perf_counter()
     try:
-        agent_output = await _invoke_runner(model_obj)
+        agent_output = await _invoke_with_gemini_retry(model_obj)
     except Exception as exc:
         if isinstance(model_obj, DeterministicAdkLlm):
             raise
