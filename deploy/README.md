@@ -86,3 +86,71 @@ gcloud run jobs create adk-leak-arena-seed \
   --set-secrets=ARENA_DB_DSN=arena-db-dsn:latest,ARENA_ADMIN_DSN=arena-admin-dsn:latest
 gcloud run jobs execute adk-leak-arena-seed --region=REGION --wait
 ```
+
+## AlloyDB Express (pre-build risk check, 2026-11-19)
+
+Checked against `https://docs.cloud.google.com/alloydb/docs/express-overview` and linked AlloyDB docs before provisioning:
+
+| # | Check | Status | Findings and doc reference |
+| :--- | :--- | :---: | :--- |
+| 1 | Free tier, pricing, scale-to-zero, regions | **Yes** | Free tier: 50 compute units/month + 2 GB storage (first 12 months per billing account), pay-as-you-go above that. Auto-scales to zero compute ($0.00/hr) after 15 minutes idle and resumes on new connections (~20 s). One-click upgrade to production AlloyDB supported. Preview regions: `asia-southeast1` (Singapore, nearest to Bengaluru; `asia-south1` is not in the Express preview list), `asia-east1`, `asia-east2`, `asia-northeast1`, `australia-southeast1`, `europe-west2`, `us-west1`. Ref: `https://docs.cloud.google.com/alloydb/docs/express-overview` |
+| 2 | PostgreSQL version | **Yes** | Defaults to PostgreSQL 18. Ref: `https://docs.cloud.google.com/alloydb/docs/express-overview` |
+| 3 | Custom roles + `FORCE ROW LEVEL SECURITY` + `NOBYPASSRLS` | **Yes (verify live)** | `postgres` belongs to `alloydbsuperuser` (managed equivalent, not true `SUPERUSER`). Standard SQL `CREATE ROLE memshield_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, table ownership by the admin/owner role, `ALTER TABLE ... FORCE ROW LEVEL SECURITY`, and policies are supported; never create `memshield_app` with `alloydbsuperuser` membership. Verify `rolsuper=f`, `rolbypassrls=f`, non-membership in `alloydbsuperuser`, and `relforcerowsecurity=t` live after creation. Ref: `https://cloud.google.com/alloydb/docs/manage-users-built-in` |
+| 4 | Extensions (`vector`, `alloydb_scann`, `google_ml_integration` / `ai.if()`) | **Yes (verify versions live)** | Express includes AlloyDB AI extensions: `vector` (0.8+ with `hnsw.iterative_scan`), `alloydb_scann` (Google ScaNN index), and `google_ml_integration` exposing `ai.if(prompt TEXT, model_id VARCHAR(100) DEFAULT NULL) RETURNS bool`. Exact `extversion` and Vertex AI permissions for `ai.if()` on Express will be verified live on the instance. Ref: `https://cloud.google.com/alloydb/docs/ai/work-with-embeddings`, `https://cloud.google.com/alloydb/docs/ai/evaluate-semantic-conditions` |
+| 5 | Cloud Run connectivity | **Yes** | Express does not expose raw public IP allowlists; external connectivity uses Public DNS (or Private Service Connect) authenticated via IAM (`roles/alloydb.client`) and mTLS 1.3 through the AlloyDB Auth Proxy (`gcr.io/alloydb-connectors/alloydb-auth-proxy`). Preferred setup: Auth Proxy sidecar in a Cloud Run multi-container YAML so the app keeps a plain `127.0.0.1` DSN with no `0.0.0.0/0` network exposure. Ref: `https://cloud.google.com/alloydb/docs/auth-proxy/connect` |
+| 6 | Laptop connectivity for tests | **Yes** | Run `alloydb-auth-proxy` locally using Application Default Credentials on a checked free port (never `5432`, e.g. `15432`). Ref: `https://cloud.google.com/alloydb/docs/auth-proxy/connect` |
+
+## Google Cloud: Cloud Run + AlloyDB Express (verified 2026-11-19)
+
+Live public read-only console: **`https://adk-leak-arena-268336845218.asia-southeast1.run.app`** (`asia-southeast1`, Singapore — nearest region offering AlloyDB Express).
+
+### 1. Provisioning (executed via Google Cloud Data Agent Kit AlloyDB MCP and `gcloud`)
+
+- **Project:** `memshield-buildathon` (with a ₹1,000 billing budget alert at 25% / 50% / 90% / 100%).
+- **AlloyDB Express cluster & primary instance:** `projects/memshield-buildathon/locations/asia-southeast1/clusters/memshield-express/instances/primary` — PostgreSQL 18.4, 1 vCPU / 4 GB, `expressConfig.enabled=true`, `publicDnsEnabled=true`, `alloydb.iam_authentication=on` (provisioned in < 2 seconds).
+- **Extensions verified live:** `vector 0.8.7.google-1`, `alloydb_scann 0.1.4`, `google_ml_integration 1.6.5`.
+- **Least-privilege application role (created via SQL, never `gcloud ... --superuser`):**
+  ```sql
+  CREATE DATABASE memshield;
+  \c memshield
+  CREATE EXTENSION IF NOT EXISTS vector;
+  CREATE EXTENSION IF NOT EXISTS alloydb_scann CASCADE;
+  CREATE EXTENSION IF NOT EXISTS google_ml_integration;
+  CREATE ROLE memshield_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD '<generated>';
+  GRANT CONNECT ON DATABASE memshield TO memshield_app;
+  GRANT USAGE ON SCHEMA public TO memshield_app;
+  ```
+- **Secrets (piped via stdin, never echoed or committed):**
+  - `arena-db-dsn`: `postgresql://memshield_app:<pw>@127.0.0.1:5432/memshield`
+  - `arena-admin-dsn`: `postgresql://postgres:<pw>@127.0.0.1:5432/memshield`
+- **Dedicated Cloud Run service account:** `adk-leak-arena-sa@memshield-buildathon.iam.gserviceaccount.com` granted `roles/alloydb.client` and `roles/secretmanager.secretAccessor` **only** on `arena-db-dsn` (never `arena-admin-dsn`).
+
+### 2. Sidecar deployment (`deploy/cloudrun/service.yaml`)
+
+The multi-container Cloud Run YAML in [`deploy/cloudrun/service.yaml`](cloudrun/service.yaml) runs:
+- `arena` (port `8090`, 2 vCPU / 4 GiB, `ARENA_PUBLIC_MODE=1`, `ARENA_STARTUP_BASELINE=0`, `minScale=0`, `maxScale=1`, image pushed to Artifact Registry `asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-main` from `main` including the Gemini pacer/retry fix and generic hook loader);
+- `alloydb-proxy` (`gcr.io/alloydb-connectors/alloydb-auth-proxy:1.18.0`, `--address=127.0.0.1 --port=5432 --public-ip --health-check --http-port=9090`), with `container-dependencies` ensuring `arena` waits for the Auth Proxy startup probe.
+
+```bash
+gcloud run services replace deploy/cloudrun/service.yaml \
+  --region=asia-southeast1 --project=memshield-buildathon
+gcloud run services add-iam-policy-binding adk-leak-arena \
+  --region=asia-southeast1 --member=allUsers --role=roles/run.invoker \
+  --project=memshield-buildathon
+```
+
+### 3. Live verification & posture evidence
+
+- Posture & refusal log: [`benchmarks/runs/2026-11-19/alloydb-posture.txt`](../benchmarks/runs/2026-11-19/alloydb-posture.txt) — `memshield_app` has `rolsuper=False`, `rolbypassrls=False`, not in `alloydbsuperuser` or `postgres`, owns no tables; `memories` has `relrowsecurity=True, relforcerowsecurity=True`; `inspect_rls_posture.ok=True`; public mode refuses startup when given `ARENA_ADMIN_DSN` or `postgres`.
+- Live Cloud Run verification: [`benchmarks/runs/2026-11-19/cloudrun-verify.txt`](../benchmarks/runs/2026-11-19/cloudrun-verify.txt) — `GET /readyz` returns `200` (`{"status":"ready","public_mode":true}`), S5 returns `LEAK` (3/3) vs `ISOLATED` (0/3, `rls_effective=True`) in 3.65 s cold / 203 ms warm (`sql=4.92 ms` vs `11.08 ms`), and `POST /api/reset` returns `403`.
+
+### 4. Estimated cost and teardown
+
+- **Idle monthly cost:** ₹0/month (AlloyDB Express scales to zero after 15 min idle with 50 free CUs/mo + 2 GB free storage; Cloud Run `minScale=0`; 2 Secret Manager versions within free tier; Artifact Registry ~0.45 GB within 0.5 GB free tier).
+- **Active demo cost:** within free tier for the 2-day event (list price above free tier: ~₹24/demo hour for Cloud Run 3 vCPU total + 4.5 GiB).
+- **Teardown commands:**
+  ```bash
+  gcloud run services delete adk-leak-arena --region=asia-southeast1 --project=memshield-buildathon --quiet
+  gcloud beta alloydb instances delete primary --cluster=memshield-express --region=asia-southeast1 --project=memshield-buildathon --quiet
+  gcloud beta alloydb clusters delete memshield-express --region=asia-southeast1 --project=memshield-buildathon --force --quiet
+  ```
