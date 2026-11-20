@@ -27,7 +27,7 @@ spec:
       serviceAccountName: adk-leak-arena-sa@memshield-buildathon.iam.gserviceaccount.com
       containers:
         - name: arena
-          image: asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-t3b
+          image: asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-t3c
           ports:
             - name: http1
               containerPort: 8090

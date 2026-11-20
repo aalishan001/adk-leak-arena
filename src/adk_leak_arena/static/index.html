@@ -101,6 +101,14 @@
     .btn-primary:hover:not(:disabled) { background: #1a5fd0; }
     .btn-bench { background: var(--green-bg); border-color: var(--green-line); color: var(--green); }
     .btn-bench:hover:not(:disabled) { background: rgba(74, 222, 128, 0.2); }
+    .product-nav { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .btn-monitor {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 5px;
+      border: 1px solid #34d399; background: #0d3b26; color: #ecfdf5;
+      font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap;
+    }
+    .btn-monitor:hover { background: #135336; color: #ffffff; }
+    .btn-monitor .mon-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; flex-shrink: 0; }
 
     /* ---------- control panel ---------- */
     .controls {
@@ -355,6 +363,12 @@
       <span class="chip plain" id="versionChip">v0.1.0</span>
       <span class="brand-sub">Red-team memory isolation inspector &middot; Unprotected pgvector vs adk-memshield (PostgreSQL RLS)</span>
     </div>
+    <nav class="product-nav" aria-label="MemShield products">
+      <a class="btn-monitor" id="linkMonitor" href="https://memshield-monitor-268336845218.asia-southeast1.run.app" target="_blank" rel="noopener noreferrer" title="Open MemShield Monitor: hourly canary checks, RLS posture drift, Cloud Monitoring alerts, and DPDP incident reports">
+        <span class="mon-dot" aria-hidden="true"></span>
+        <span>MemShield Monitor (Live Status &amp; DPDP Reports) &#8599;</span>
+      </a>
+    </nav>
     <div class="status-row" aria-label="Runtime status">
       <span class="chip" id="dbChip" title="Database role privileges and RLS flags read from pg_roles / pg_class">DB: probing...</span>
       <span class="chip" id="ollamaChip" title="Local Ollama status">Ollama: probing...</span>
