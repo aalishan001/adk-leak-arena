@@ -103,7 +103,7 @@ Checked against `https://docs.cloud.google.com/alloydb/docs/express-overview` an
 
 ## Google Cloud: Cloud Run + AlloyDB Express (verified 2026-11-19; cold-start hardened 2026-11-20)
 
-Live public read-only console: **`https://adk-leak-arena-268336845218.asia-southeast1.run.app`** (`asia-southeast1`, Singapore — prototype on synthetic data because AlloyDB Express is not yet available in Mumbai; production AlloyDB and Cloud Run run in `asia-south1` Mumbai for India DPDP data residency).
+Live public read-only console: **`https://adk-leak-arena-268336845218.asia-southeast1.run.app`** (`asia-southeast1`, Singapore — prototype on synthetic data because AlloyDB Express is not yet available in Mumbai; production target: Mumbai (`asia-south1`) for India DPDP data residency).
 
 ### 1. Provisioning (executed via Google Cloud Data Agent Kit AlloyDB MCP and `gcloud`)
 

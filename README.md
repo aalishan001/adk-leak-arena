@@ -24,7 +24,7 @@ Other stores join the same run with `--targets`: Qdrant (payload filters), Mem0 
 
 ## Live Hosted Demo
 
-A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1` Singapore prototype on synthetic data because AlloyDB Express is not yet in Mumbai — production AlloyDB and Cloud Run run in `asia-south1` Mumbai for India DPDP data residency; `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
+A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1` Singapore prototype on synthetic data because AlloyDB Express is not yet in Mumbai — production target: Mumbai (`asia-south1`) for India DPDP data residency; `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
 
 - **URL:** `https://adk-leak-arena-268336845218.asia-southeast1.run.app`
 - **Readiness check:** `GET /readyz` (`{"status":"ready","public_mode":true}`)
