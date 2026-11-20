@@ -24,12 +24,13 @@ Other stores join the same run with `--targets`: Qdrant (payload filters), Mem0 
 
 ## Live Hosted Demo
 
-A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1`, `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
+A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1` Singapore prototype on synthetic data because AlloyDB Express is not yet in Mumbai — production AlloyDB and Cloud Run run in `asia-south1` Mumbai for India DPDP data residency; `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
 
 - **URL:** `https://adk-leak-arena-268336845218.asia-southeast1.run.app`
 - **Readiness check:** `GET /readyz` (`{"status":"ready","public_mode":true}`)
+- **Cold-start resilience (verified after 21.5 min idle):** first cold load returns HTTP 200 (12.93 s) and first S5 click returns HTTP 200 (4.70 s; warm S5 208 ms), zero 500/503s while keeping `minScale=0` (`benchmarks/runs/2026-11-20/cloudrun-coldstart.txt`).
 
-Both targets connect as the non-bypass `memshield_app` role; the public service never receives `ARENA_ADMIN_DSN` and refuses to start if given an admin/owner/superuser login. See [`deploy/README.md`](deploy/README.md) and [`deploy/cloudrun/service.yaml`](deploy/cloudrun/service.yaml) for the AlloyDB Auth Proxy sidecar setup.
+Both targets connect as the non-bypass `memshield_app` role; the public service never receives `ARENA_ADMIN_DSN` and refuses to start (or serve any data) if given an admin/owner/superuser login. See [`deploy/README.md`](deploy/README.md) and [`deploy/cloudrun/service.yaml`](deploy/cloudrun/service.yaml) for the AlloyDB Auth Proxy sidecar setup.
 
 ## What changed in 0.2.0
 
@@ -98,6 +99,7 @@ docker pull ghcr.io/aalishan001/adk-leak-arena:0.2.1
 | `leak-arena eval --caller exec_agent --scenarios S4,CONTROL` | Clearance-3 caller on a subset of scenarios. |
 | `leak-arena eval --format markdown` / `--format json` | GitHub table or a single parseable JSON report. |
 | `leak-arena prepared --seed-size 100000` | Prepared-connection mode: recall per execution on one pinned connection ([Scale](#scale-hnsw-and-the-prepared-connection-mode)). |
+| `leak-arena redteam --engine gemini_api --out-json out.json` | Adaptive Gemini red-team: Gemini Planner designs unscripted probes (paraphrase, Hinglish, 2-turn recon, table extraction, social engineering), runs live ADK Workers, scores outputs with a blind Gemini Leak Judge + calibration set, reports token/cost ledger, and enforces CI exit code `0`/`1`. |
 | `leak-arena seed` | Create or upgrade the schema and roles and load the baseline (used by the Kubernetes seed Job). |
 | `leak-arena serve --host 127.0.0.1 --port 8090` | Web console and API. |
 
@@ -493,7 +495,7 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
-The suite (66 tests at 0.2.1; 71 on `main`) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
+The suite (66 tests at 0.2.1; 74 on `main`) needs the database on `localhost:54330`; CI runs it against a `pgvector/pgvector:pg16` service container. See [CONTRIBUTING.md](https://github.com/aalishan001/adk-leak-arena/blob/main/CONTRIBUTING.md) for adding attack scenarios or new `BaseMemoryService` targets, and [SECURITY.md](https://github.com/aalishan001/adk-leak-arena/blob/main/SECURITY.md) for intended use and vulnerability reporting.
 
 ---
 

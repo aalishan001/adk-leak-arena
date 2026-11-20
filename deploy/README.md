@@ -16,6 +16,7 @@ It runs `leak-arena serve` on port 8090 as an unprivileged user (uid 10001) and 
 | `ARENA_DB_DSN` / `MEMSHIELD_DB_DSN` | Application role (`memshield_app`: `NOSUPERUSER`, `NOBYPASSRLS`). Every measured read uses it. |
 | `ARENA_ADMIN_DSN` | Schema owner. Used by `leak-arena seed`, synthetic stress loads and per-run schemas. **Only the seed job gets it in a public deployment:** with `ARENA_PUBLIC_MODE=1` the web process refuses to start if it is set. |
 | `ARENA_PUBLIC_MODE` | `1` = read-only console: attacks run (deterministic engine, PostgreSQL targets, no fixture-planting S6/S7); inject, reset, rescale, benchmark jobs and history deletion return 403 and are hidden. Use it for any public deployment. |
+| `ARENA_DB_CONNECT_WAIT_S` | Seconds to retry transient DB connection errors during cold-start wake-up (default `0`; set to `60` on Cloud Run + scale-to-zero AlloyDB Express so the first cold request wakes the database instead of returning 500/503 while remaining fail-closed). |
 | `ARENA_STARTUP_BASELINE` | `1` runs a baseline benchmark at startup to fill the history panel. |
 | `ARENA_QDRANT_URL` | Qdrant endpoint for the `qdrant` and `mem0` targets (default `http://localhost:56333`; set in the dev overlay). Unused in public mode, which offers only the PostgreSQL targets. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional: the `gemini_api` engine (default model `gemini-3.8-flash`). |
@@ -100,9 +101,9 @@ Checked against `https://docs.cloud.google.com/alloydb/docs/express-overview` an
 | 5 | Cloud Run connectivity | **Yes** | Express does not expose raw public IP allowlists; external connectivity uses Public DNS (or Private Service Connect) authenticated via IAM (`roles/alloydb.client`) and mTLS 1.3 through the AlloyDB Auth Proxy (`gcr.io/alloydb-connectors/alloydb-auth-proxy`). Preferred setup: Auth Proxy sidecar in a Cloud Run multi-container YAML so the app keeps a plain `127.0.0.1` DSN with no `0.0.0.0/0` network exposure. Ref: `https://cloud.google.com/alloydb/docs/auth-proxy/connect` |
 | 6 | Laptop connectivity for tests | **Yes** | Run `alloydb-auth-proxy` locally using Application Default Credentials on a checked free port (never `5432`, e.g. `15432`). Ref: `https://cloud.google.com/alloydb/docs/auth-proxy/connect` |
 
-## Google Cloud: Cloud Run + AlloyDB Express (verified 2026-11-19)
+## Google Cloud: Cloud Run + AlloyDB Express (verified 2026-11-19; cold-start hardened 2026-11-20)
 
-Live public read-only console: **`https://adk-leak-arena-268336845218.asia-southeast1.run.app`** (`asia-southeast1`, Singapore — nearest region offering AlloyDB Express).
+Live public read-only console: **`https://adk-leak-arena-268336845218.asia-southeast1.run.app`** (`asia-southeast1`, Singapore — prototype on synthetic data because AlloyDB Express is not yet available in Mumbai; production AlloyDB and Cloud Run run in `asia-south1` Mumbai for India DPDP data residency).
 
 ### 1. Provisioning (executed via Google Cloud Data Agent Kit AlloyDB MCP and `gcloud`)
 
@@ -128,8 +129,9 @@ Live public read-only console: **`https://adk-leak-arena-268336845218.asia-south
 ### 2. Sidecar deployment (`deploy/cloudrun/service.yaml`)
 
 The multi-container Cloud Run YAML in [`deploy/cloudrun/service.yaml`](cloudrun/service.yaml) runs:
-- `arena` (port `8090`, 2 vCPU / 4 GiB, `ARENA_PUBLIC_MODE=1`, `ARENA_STARTUP_BASELINE=0`, `minScale=0`, `maxScale=1`, image pushed to Artifact Registry `asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-main` from `main` including the Gemini pacer/retry fix and generic hook loader);
-- `alloydb-proxy` (`gcr.io/alloydb-connectors/alloydb-auth-proxy:1.18.0`, `--address=127.0.0.1 --port=5432 --public-ip --health-check --http-port=9090`), with `container-dependencies` ensuring `arena` waits for the Auth Proxy startup probe.
+- `arena` (port `8090`, 2 vCPU / 4 GiB, `ARENA_PUBLIC_MODE=1`, `ARENA_STARTUP_BASELINE=0`, `ARENA_DB_CONNECT_WAIT_S=60`, `minScale=0`, `maxScale=1`, `startup-cpu-boost=true`, image pushed to Artifact Registry `asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-q0`);
+- `alloydb-proxy` (`gcr.io/alloydb-connectors/alloydb-auth-proxy:1.18.0`, `--address=127.0.0.1 --port=5432 --public-ip --health-check --http-port=9090`), with `container-dependencies` ensuring `arena` waits for the Auth Proxy startup probe (`periodSeconds: 2, timeoutSeconds: 1, initialDelaySeconds: 0` on both containers).
+- **Cold-start resilience (fail-closed):** when `ARENA_DB_CONNECT_WAIT_S > 0` in public mode, `arena` still rejects `ARENA_ADMIN_DSN` and `ARENA_PRE_WRITE_HOOK` synchronously at startup, then runs a fast DB probe and defers retry-backed posture verification (`connect_with_retry`, up to 60 s) to the first request touching the database (`/readyz`, `/api/state`, `/api/attack`). No data or state is ever served until `check_public_posture` passes; this keeps `minScale=0` without tripping Cloud Run's cold-start queue or failing when AlloyDB Express resumes from scale-to-zero.
 
 ```bash
 gcloud run services replace deploy/cloudrun/service.yaml \
@@ -142,7 +144,13 @@ gcloud run services add-iam-policy-binding adk-leak-arena \
 ### 3. Live verification & posture evidence
 
 - Posture & refusal log: [`benchmarks/runs/2026-11-19/alloydb-posture.txt`](../benchmarks/runs/2026-11-19/alloydb-posture.txt) — `memshield_app` has `rolsuper=False`, `rolbypassrls=False`, not in `alloydbsuperuser` or `postgres`, owns no tables; `memories` has `relrowsecurity=True, relforcerowsecurity=True`; `inspect_rls_posture.ok=True`; public mode refuses startup when given `ARENA_ADMIN_DSN` or `postgres`.
-- Live Cloud Run verification: [`benchmarks/runs/2026-11-19/cloudrun-verify.txt`](../benchmarks/runs/2026-11-19/cloudrun-verify.txt) — `GET /readyz` returns `200` (`{"status":"ready","public_mode":true}`), S5 returns `LEAK` (3/3) vs `ISOLATED` (0/3, `rls_effective=True`) in 3.65 s cold / 203 ms warm (`sql=4.92 ms` vs `11.08 ms`), and `POST /api/reset` returns `403`.
+- Live Cloud Run verification: [`benchmarks/runs/2026-11-19/cloudrun-verify.txt`](../benchmarks/runs/2026-11-19/cloudrun-verify.txt) — `GET /readyz` returns `200` (`{"status":"ready","public_mode":true}`), S5 returns `LEAK` (3/3) vs `ISOLATED` (0/3, `rls_effective=True`), and `POST /api/reset` returns `403`.
+- Cold-start acceptance test after 21.5 min completely idle (`minScale=0`, AlloyDB Express auto-suspended): [`benchmarks/runs/2026-11-20/cloudrun-coldstart.txt`](../benchmarks/runs/2026-11-20/cloudrun-coldstart.txt) — **5/5 HTTP 200, zero 500/503s**:
+  1. `GET /` (cold container + HTML): `HTTP 200` in **12.93 s** (83,429 bytes)
+  2. `GET /api/state` (cold DB posture verification): `HTTP 200` in **243.2 ms** (`rls_effective=True, role=memshield_app`)
+  3. `POST /api/attack` S5 (first cold S5 click): `HTTP 200` in **4.70 s** (`unprotected` leak 3/3, `sql=24.6 ms` | `memshield` isolated 0/3, `sql=79.6 ms`)
+  4. `GET /readyz`: `HTTP 200` in **396.8 ms**
+  5. `POST /api/attack` S5 (warm repeat): `HTTP 200` in **207.8 ms** (`unprotected` leak 3/3, `sql=6.5 ms` | `memshield` isolated 0/3, `sql=10.3 ms`)
 
 ### 4. Estimated cost and teardown
 
