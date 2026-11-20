@@ -9,6 +9,11 @@
 [![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4.svg)](https://google.github.io/adk-docs/)
 [![adk-memshield on PyPI](https://img.shields.io/pypi/v/adk-memshield?label=adk-memshield)](https://pypi.org/project/adk-memshield/)
 
+### Live Hosted Demos & Evidence
+- **Live LeakArena Console:** https://adk-leak-arena-268336845218.asia-southeast1.run.app (Cloud Run + AlloyDB Express PG 18.4; `39/40 -> 0/40` leaks, `100%` clean recall; WCAG 2.2 AA / 0 serious axe-core violations)
+- **Live MemShield Monitor:** https://memshield-monitor-268336845218.asia-southeast1.run.app (hourly canary/RLS checks, Cloud Monitoring alerts, DPDP operational reports; WCAG 2.2 AA)
+- **Saved Benchmark & Audit Runs:** [`benchmarks/runs/2026-11-20/`](benchmarks/runs/2026-11-20/) (Gemini live `108/108`, adaptive red-team `5/5 -> 0/5`, Qdrant `92.3%` & Mem0 `95.7%` wrong-filter leaks, cold-start 200 verification, `axe-audit.txt`)
+
 `adk-leak-arena` is a red-team evaluation harness and live PostgreSQL kernel telemetry console in the spirit of **Promptfoo** and UK AISI **Inspect AI**.
 
 It installs **[`adk-memshield>=0.2.0,<0.3`](https://pypi.org/project/adk-memshield/) from PyPI** and runs live Google ADK `Runner` + `preload_memory` pipelines side by side, one per memory target, against the same seeded multi-tenant enterprise dataset, which is laced with Canary tokens. The default pair is:

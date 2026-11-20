@@ -1,0 +1,10 @@
+=== AXE-CORE WCAG 2.2 AA AUDIT ===
+URL: https://ux-check---adk-leak-arena-268336845218.asia-southeast1.run.app/
+Timestamp: 2026-11-20T08:38:37.113Z
+Axe version: 4.14.1
+Passes: 29
+Incomplete: 3
+Total violations: 0
+Serious/Critical violations: 0
+
+VIOLATIONS: NONE (0 violations)

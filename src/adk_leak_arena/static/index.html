@@ -85,7 +85,12 @@
       background: var(--code); border: 1px solid var(--line-strong); border-radius: 5px;
       padding: 6px 9px; font-size: 12.5px; outline: none; max-width: 100%;
     }
-    select:focus, input[type="text"]:focus, button:focus-visible { border-color: var(--blue); outline: none; box-shadow: 0 0 0 1px var(--blue); }
+    select:focus, input[type="text"]:focus, button:focus-visible, a:focus-visible, summary:focus-visible { border-color: var(--blue); outline: 3px solid var(--blue); outline-offset: 2px; }
+    .skip-link { position: absolute; left: -9999px; top: 0; background: #1f6feb; color: #ffffff; padding: 8px 14px; font-weight: 700; z-index: 200; text-decoration: none; border-radius: 4px; }
+    .skip-link:focus { left: 8px; top: 8px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
+    }
     .btn {
       display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 5px;
       border: 1px solid var(--line-strong); background: #1a2029; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -290,7 +295,7 @@
     #btnRunAttack.ready { animation: readyPulse 1.6s ease-out infinite; border-color: #7dd3fc; }
     #btnRunAttack .ready-tag {
       display: none; font: 700 9.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
-      padding: 1px 5px; border-radius: 3px; background: rgba(125, 211, 252, 0.18); color: #e0f2fe;
+      padding: 1px 5px; border-radius: 3px; background: #0f172a; color: #f8fafc;
     }
     #btnRunAttack.ready .ready-tag { display: inline-block; }
     @media (prefers-reduced-motion: reduce) { #btnRunAttack.ready { animation: none; } }
@@ -336,11 +341,19 @@
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-name"><span class="dot-emerald"></span>adk-leak-arena</span>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
+        <path d="M18 2 L32 7.5 V17.5 C32 25.2 26.1 31.1 18 33 C9.9 31.1 4 25.2 4 17.5 V7.5 Z" fill="#1a73e8"/>
+        <path d="M18 5.2 L28.8 9.5 V17.2 C28.8 23.1 24.2 27.8 18 29.5 V5.2 Z" fill="#137333"/>
+        <rect x="11.5" y="12" width="13" height="3.2" rx="1.2" fill="#ffffff"/>
+        <rect x="11.5" y="17" width="13" height="3.2" rx="1.2" fill="#ffffff" opacity="0.92"/>
+        <rect x="11.5" y="22" width="9" height="3.2" rx="1.2" fill="#ffffff" opacity="0.85"/>
+      </svg>
+      <span class="brand-name">MemShield &middot; adk-leak-arena</span>
       <span class="chip plain" id="versionChip">v0.1.0</span>
-      <span class="brand-sub">Red-team memory isolation inspector · Unprotected pgvector vs adk-memshield (PostgreSQL RLS)</span>
+      <span class="brand-sub">Red-team memory isolation inspector &middot; Unprotected pgvector vs adk-memshield (PostgreSQL RLS)</span>
     </div>
     <div class="status-row" aria-label="Runtime status">
       <span class="chip" id="dbChip" title="Database role privileges and RLS flags read from pg_roles / pg_class">DB: probing...</span>
@@ -416,8 +429,8 @@
     </div>
 
     <div class="query-row">
-      <select id="querySelect" title="Benchmark queries for this scenario (mixed = caller has an authorized answer; pure = exfiltration probe)"></select>
-      <input type="text" id="queryInput" placeholder="Red-team prompt or analyst query, executed on both ADK Runners" maxlength="2000" />
+      <select id="querySelect" aria-label="Preset benchmark query" title="Benchmark queries for this scenario (mixed = caller has an authorized answer; pure = exfiltration probe)"></select>
+      <input type="text" id="queryInput" aria-label="Red-team prompt or analyst query" placeholder="Red-team prompt or analyst query, executed on both ADK Runners" maxlength="2000" />
       <button class="btn btn-primary" id="btnRunAttack" type="button" title="Execute the staged scenario on both ADK Runners">
         <svg class="svg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5-9-5.5z"/></svg>
         <span id="btnRunAttackLabel">Run Side-by-Side Query</span>
@@ -478,10 +491,10 @@
     <span class="perf-item"><span class="perf-k">MemShield RLS SQL:</span><span class="perf-v" id="perfMsSql">-</span></span>
     <span class="perf-item"><span class="perf-k">RLS Kernel Delta:</span><span class="perf-v" id="perfDelta">-</span></span>
     <span class="perf-item"><span class="perf-k">End-to-End Agent Turn:</span><span class="perf-v" id="perfTurn">-</span></span>
-    <span class="perf-scope" id="perfScope">Stage a scenario, then click Run Side-by-Side Query.</span>
+    <span class="perf-scope" id="perfScope" aria-live="polite">Stage a scenario, then click Run Side-by-Side Query.</span>
   </section>
 
-  <main class="arena">
+  <main class="arena" id="main-content" tabindex="-1">
     <section class="pane left" id="pane-left" aria-label="Unprotected pgvector target"></section>
     <section class="pane right" id="pane-right" aria-label="adk-memshield target"></section>
   </main>
