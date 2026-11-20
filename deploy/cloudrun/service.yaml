@@ -27,7 +27,7 @@ spec:
       serviceAccountName: adk-leak-arena-sa@memshield-buildathon.iam.gserviceaccount.com
       containers:
         - name: arena
-          image: asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-main
+          image: asia-southeast1-docker.pkg.dev/memshield-buildathon/memshield-repo/adk-leak-arena:0.2.1-q0
           ports:
             - name: http1
               containerPort: 8090
@@ -42,6 +42,8 @@ spec:
               value: "0"
             - name: ARENA_STATE_DIR
               value: /tmp/adk-leak-arena
+            - name: ARENA_DB_CONNECT_WAIT_S
+              value: "60"
             - name: ARENA_DB_DSN
               valueFrom:
                 secretKeyRef:
@@ -56,10 +58,10 @@ spec:
             httpGet:
               path: /healthz
               port: 8090
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            timeoutSeconds: 4
-            failureThreshold: 24
+            initialDelaySeconds: 0
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /healthz
@@ -86,7 +88,7 @@ spec:
             httpGet:
               path: /startup
               port: 9090
-            initialDelaySeconds: 1
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 15
+            initialDelaySeconds: 0
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30

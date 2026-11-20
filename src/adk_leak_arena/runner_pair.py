@@ -380,7 +380,14 @@ def probe_db_security_posture(config: ArenaConfig, *, refresh: bool = False) -> 
             return cached
     posture: dict[str, Any] = {"ok": False}
     try:
-        with psycopg.connect(config.db_dsn, connect_timeout=3) as conn:
+        from .config import connect_with_retry
+
+        wait_s = config.db_connect_wait_s
+        with connect_with_retry(
+            config.db_dsn,
+            connect_timeout=10 if wait_s > 0 else 3,
+            max_wait_s=wait_s,
+        ) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -18,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
 
 from . import __version__
-from .config import ArenaConfig
+from .config import ArenaConfig, connect_with_retry
 from .dataset import (
     ALL_PRESETS,
     ATTACK_PRESETS,
@@ -62,7 +63,12 @@ class PublicModeConfigurationError(RuntimeError):
     """The web process was started in public mode with credentials it must not hold."""
 
 
-def check_public_posture(cfg: ArenaConfig) -> dict[str, Any]:
+def check_public_posture(
+    cfg: ArenaConfig,
+    *,
+    connect_timeout: int = 5,
+    max_wait_s: float | None = None,
+) -> dict[str, Any]:
     """Refuse a public console that holds the admin login or reads through a role that can
     bypass row-level security (superuser, BYPASSRLS, or owner of an arena table)."""
     if cfg.admin_dsn:
@@ -74,7 +80,8 @@ def check_public_posture(cfg: ArenaConfig) -> dict[str, Any]:
         raise PublicModeConfigurationError(
             "ARENA_PUBLIC_MODE=1 refuses ARENA_PRE_WRITE_HOOK: a public service must not load external hook code"
         )
-    with psycopg.connect(cfg.db_dsn, connect_timeout=5) as conn:
+    wait_s = cfg.db_connect_wait_s if max_wait_s is None else max_wait_s
+    with connect_with_retry(cfg.db_dsn, connect_timeout=connect_timeout, max_wait_s=wait_s) as conn:
         role, is_super, bypass, owns = conn.execute(
             """
             SELECT current_user, r.rolsuper, r.rolbypassrls,
@@ -104,7 +111,12 @@ def check_public_posture(cfg: ArenaConfig) -> dict[str, Any]:
 
 def _is_seeded(cfg: ArenaConfig) -> bool:
     try:
-        with psycopg.connect(cfg.db_dsn, connect_timeout=3) as conn:
+        wait_s = cfg.db_connect_wait_s
+        with connect_with_retry(
+            cfg.db_dsn,
+            connect_timeout=10 if wait_s > 0 else 3,
+            max_wait_s=wait_s,
+        ) as conn:
             # Only the first schema on the search_path counts (where `leak-arena seed` writes).
             table = conn.execute(
                 "SELECT to_regclass(quote_ident(current_schema()) || '.memories_unprotected')::text"
@@ -260,10 +272,46 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     cfg = config or ArenaConfig()
     seed_lock = asyncio.Lock()
+    posture_lock = asyncio.Lock()
+    public_posture_verified = False
+    last_db_ok = 0.0
     history = RunHistory()
     jobs = BenchmarkJobManager(cfg, history)
 
+    async def _ensure_public_posture() -> None:
+        nonlocal public_posture_verified, last_db_ok
+        if not cfg.public_mode or public_posture_verified:
+            return
+        async with posture_lock:
+            if public_posture_verified:
+                return
+            await asyncio.to_thread(
+                check_public_posture,
+                cfg,
+                connect_timeout=10 if cfg.db_connect_wait_s > 0 else 5,
+                max_wait_s=cfg.db_connect_wait_s,
+            )
+            public_posture_verified = True
+            last_db_ok = time.monotonic()
+
+    async def _ensure_db_awake() -> None:
+        nonlocal last_db_ok
+        if cfg.db_connect_wait_s <= 0 or (time.monotonic() - last_db_ok) < 300.0:
+            return
+
+        def _wake() -> None:
+            with connect_with_retry(
+                cfg.db_dsn, connect_timeout=10, max_wait_s=cfg.db_connect_wait_s
+            ) as conn:
+                conn.execute("SELECT 1")
+
+        await asyncio.to_thread(_wake)
+        last_db_ok = time.monotonic()
+
     async def _ensure_seeded() -> None:
+        nonlocal last_db_ok
+        if cfg.public_mode:
+            await _ensure_public_posture()
         if cfg.db_dsn in _INITIALIZED:
             return
         if cfg.public_mode:
@@ -271,12 +319,14 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             # by `leak-arena seed` in a separate job. Until then requests get 503.
             if await asyncio.to_thread(_is_seeded, cfg):
                 _INITIALIZED.add(cfg.db_dsn)
+                last_db_ok = time.monotonic()
                 return
             raise HTTPException(status_code=503, detail="arena not seeded yet; run `leak-arena seed` with the admin DSN")
         async with seed_lock:
             if cfg.db_dsn not in _INITIALIZED:
                 await asyncio.to_thread(ensure_schema_and_seed, cfg)
                 _INITIALIZED.add(cfg.db_dsn)
+                last_db_ok = time.monotonic()
 
     def _reject_if_public(action: str) -> None:
         # ARENA_PUBLIC_MODE: a read-only console for public deployments. Attacks (searches)
@@ -293,9 +343,33 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        nonlocal public_posture_verified, last_db_ok
         if cfg.public_mode:
-            # Refuse to start with the admin login or an RLS-bypassing application role.
-            await asyncio.to_thread(check_public_posture, cfg)
+            # Always refuse forbidden env config immediately without waiting on the DB.
+            if cfg.admin_dsn or cfg.pre_write_hook:
+                check_public_posture(cfg, connect_timeout=1, max_wait_s=0.0)
+            if cfg.db_connect_wait_s > 0:
+                # Scale-to-zero DBs (e.g. AlloyDB Express) can take ~15-25s to wake. Probe
+                # quickly here so Cloud Run passes startup probes under 10s; if the DB is
+                # sleeping, defer the retry-backed posture verification to the first DB call
+                # (still 100% fail-closed before any data or state is served).
+                try:
+                    await asyncio.to_thread(
+                        check_public_posture, cfg, connect_timeout=2, max_wait_s=0.0
+                    )
+                    public_posture_verified = True
+                    last_db_ok = time.monotonic()
+                except psycopg.OperationalError as exc:
+                    logger.warning(
+                        "public mode: database waking up (%s); deferring posture check to first request",
+                        type(exc).__name__,
+                    )
+                    yield
+                    return
+            else:
+                await asyncio.to_thread(check_public_posture, cfg)
+                public_posture_verified = True
+                last_db_ok = time.monotonic()
             try:
                 await _ensure_seeded()
             except HTTPException:
@@ -349,13 +423,24 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
     @app.get("/readyz")
     async def readyz() -> dict[str, Any]:
         """Readiness: the arena database answers on the application DSN."""
+        nonlocal last_db_ok
 
         def _ping() -> None:
-            with psycopg.connect(cfg.db_dsn, connect_timeout=3) as conn:
+            wait_s = cfg.db_connect_wait_s
+            with connect_with_retry(
+                cfg.db_dsn,
+                connect_timeout=10 if wait_s > 0 else 3,
+                max_wait_s=wait_s,
+            ) as conn:
                 conn.execute("SELECT 1")
 
         try:
+            if cfg.public_mode:
+                await _ensure_public_posture()
             await asyncio.to_thread(_ping)
+            last_db_ok = time.monotonic()
+        except PublicModeConfigurationError:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"database not ready ({type(exc).__name__})") from None
         if cfg.public_mode:
@@ -368,11 +453,24 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.get("/api/state")
     async def get_state() -> dict[str, Any]:
+        nonlocal last_db_ok
         await _ensure_seeded()
-        ollama, posture = await asyncio.gather(
-            asyncio.to_thread(check_ollama_status, cfg),
-            asyncio.to_thread(probe_db_security_posture, cfg),
-        )
+        await _ensure_db_awake()
+        if cfg.public_mode:
+            ollama = {
+                "online": False,
+                "model_available": False,
+                "configured_model": cfg.ollama_model,
+                "available_models": [],
+            }
+            posture = await asyncio.to_thread(probe_db_security_posture, cfg)
+        else:
+            ollama, posture = await asyncio.gather(
+                asyncio.to_thread(check_ollama_status, cfg),
+                asyncio.to_thread(probe_db_security_posture, cfg),
+            )
+        if posture.get("ok"):
+            last_db_ok = time.monotonic()
         return {
             "arena_version": __version__,
             "memshield_version": getattr(adk_memshield, "__version__", "unknown"),
@@ -444,6 +542,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
 
     @app.post("/api/attack")
     async def execute_attack(req: AttackRequest) -> dict[str, Any]:
+        nonlocal last_db_ok
         if cfg.public_mode:
             # Read-only and free to serve: no paid or local-GPU engines, no stores that need
             # resetting, no presets that plant fixture rows, nothing on the admin DSN.
@@ -455,6 +554,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             if (req.preset_id or "S1") in SCENARIO_FIXTURES:
                 raise HTTPException(status_code=403, detail="this scenario plants fixture rows; not available in public mode")
         await _ensure_seeded()
+        await _ensure_db_awake()
         preset = PRESET_BY_ID.get(req.preset_id or "S1", ATTACK_PRESETS[0])
         query_text = (req.query or "").strip() or preset.default_query
 
@@ -470,6 +570,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             top_k=req.top_k,
             targets=req.targets,
         )
+        last_db_ok = time.monotonic()
         result["seed_size"] = current_seed_size()
         result["benchmark_running"] = jobs.running
         result["canary_tokens"] = list(canary_tokens())

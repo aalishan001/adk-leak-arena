@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
+import time
 from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
@@ -106,6 +107,11 @@ class ArenaConfig:
     # Optional generic pre_write hook (`module:attr`) passed to adk-memshield. Off by default;
     # refused when public_mode is enabled so a public service never loads external code.
     pre_write_hook: str = field(default_factory=lambda: os.environ.get("ARENA_PRE_WRITE_HOOK", "").strip())
+    # Max seconds to retry transient PostgreSQL OperationalError on connect (useful when a
+    # scale-to-zero database like AlloyDB Express wakes up from idle; 0 disables retry).
+    db_connect_wait_s: float = field(
+        default_factory=lambda: max(0.0, float(os.environ.get("ARENA_DB_CONNECT_WAIT_S", "0")))
+    )
     # Postgres schema holding this run's tables ("" = the default search_path).
     schema: str = ""
     top_k: int = 3
@@ -139,3 +145,31 @@ def load_pre_write_hook(config: ArenaConfig) -> Any | None:
     if not callable(hook):
         raise TypeError(f"ARENA_PRE_WRITE_HOOK {spec!r} is not callable")
     return hook
+
+
+def connect_with_retry(
+    dsn: str,
+    *,
+    connect_timeout: int = 5,
+    max_wait_s: float = 0.0,
+) -> Any:
+    """Connect to PostgreSQL, retrying transient OperationalError while a DB wakes up."""
+    import psycopg
+
+    deadline = time.monotonic() + max(0.0, max_wait_s)
+    attempt = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        per_try = (
+            connect_timeout
+            if max_wait_s <= 0.0
+            else max(2, min(connect_timeout, int(remaining) + 1))
+        )
+        try:
+            return psycopg.connect(dsn, connect_timeout=per_try)
+        except psycopg.OperationalError:
+            if time.monotonic() >= deadline:
+                raise
+            attempt += 1
+            delay = min(3.0, 0.5 * (2 ** min(attempt - 1, 3)))
+            time.sleep(min(delay, max(0.1, deadline - time.monotonic())))

@@ -1,0 +1,14 @@
+# Q0 Cloud Run + AlloyDB Express Cold-Start Verification (after 21+ min completely idle)
+# idle_since_utc: 2026-11-19T23:52:35Z
+# tested_at_utc:  2026-11-20T00:14:03Z
+# url:            https://adk-leak-arena-268336845218.asia-southeast1.run.app
+# config:         minScale=0, maxScale=1, container-dependencies=alloydb-proxy, ARENA_DB_CONNECT_WAIT_S=60
+
+1. GET / (cold HTML load): HTTP 200 in 12933.1 ms (83429 bytes)
+2. GET /api/state (cold DB posture + wake): HTTP 200 in 243.2 ms (37045 bytes)
+3. POST /api/attack S5 (first S5 click): HTTP 200 in 4703.0 ms (19630 bytes)
+4. GET /readyz (readiness check): HTTP 200 in 396.8 ms (37 bytes)
+5. POST /api/attack S5 (warm repeat): HTTP 200 in 207.8 ms (19606 bytes)
+state_summary: public_mode=True, rls_effective=True, role=memshield_app
+s5_first_click: unprotected=leak (3/3, sql=24.615ms) | memshield=isolated (0/3, sql=79.555ms)
+s5_warm_click:  unprotected=leak (3/3, sql=6.5ms) | memshield=isolated (0/3, sql=10.284ms)
