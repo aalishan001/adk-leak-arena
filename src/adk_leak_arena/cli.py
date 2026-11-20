@@ -389,6 +389,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="Subset of unprotected,memshield,memshield_unpinned")
     prep_p.add_argument("--format", choices=("table", "json"), default="table")
 
+    rt_p = sub.add_parser(
+        "redteam",
+        help="Adaptive Gemini red-team planner, workers, and blind semantic leak judge",
+    )
+    rt_p.add_argument("--caller", default="alice_analyst")
+    rt_p.add_argument("--engine", default="gemini_api", choices=("gemini_api", "deterministic_agent", "ollama_gemma"))
+    rt_p.add_argument("--targets", default="unprotected,memshield")
+    rt_p.add_argument("--model", default=None, help="Gemini model for planner and judge (default: GEMINI_MODEL)")
+    rt_p.add_argument("--no-calibration", action="store_true", help="Skip 3-case canary calibration set")
+    rt_p.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    rt_p.add_argument("--out-json", default=None, help="Optional path to also write raw JSON report")
+
     args = parser.parse_args(list(argv) if argv is not None else None)
     cfg = ArenaConfig()
 
@@ -428,6 +440,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_ERROR
         print(json.dumps(report, indent=2) if args.format == "json" else render_prepared_table(report))
         return EXIT_OK
+
+    if args.command == "redteam":
+        from pathlib import Path
+        from .redteam import render_redteam_markdown, run_adaptive_redteam
+
+        try:
+            target_names = tuple(parse_targets(args.targets))
+        except ValueError as exc:
+            parser.error(str(exc))
+        try:
+            report = asyncio.run(
+                run_adaptive_redteam(
+                    cfg,
+                    caller_id=args.caller,
+                    target_engine=args.engine,  # type: ignore[arg-type]
+                    targets=target_names,
+                    model=args.model,
+                    include_calibration=not args.no_calibration,
+                )
+            )
+        except Exception as exc:
+            print(f"leak-arena redteam: run error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        if args.out_json:
+            Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_json).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(report, indent=2) if args.format == "json" else render_redteam_markdown(report))
+        return int(report["summary"]["gate_exit_code"])
 
     if args.command == "eval":
         fmt = "json" if args.json else args.format
