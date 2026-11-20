@@ -352,7 +352,7 @@
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="topbar">
     <div class="brand">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
+      <svg viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
         <path d="M18 2 L32 7.5 V17.5 C32 25.2 26.1 31.1 18 33 C9.9 31.1 4 25.2 4 17.5 V7.5 Z" fill="#1a73e8"/>
         <path d="M18 5.2 L28.8 9.5 V17.2 C28.8 23.1 24.2 27.8 18 29.5 V5.2 Z" fill="#137333"/>
         <rect x="11.5" y="12" width="13" height="3.2" rx="1.2" fill="#ffffff"/>
@@ -363,8 +363,8 @@
       <span class="chip plain" id="versionChip">v0.1.0</span>
       <span class="brand-sub">Red-team memory isolation inspector &middot; Unprotected pgvector vs adk-memshield (PostgreSQL RLS)</span>
     </div>
-    <nav class="product-nav" aria-label="MemShield products">
-      <a class="btn-monitor" id="linkMonitor" href="https://memshield-monitor-268336845218.asia-southeast1.run.app" target="_blank" rel="noopener noreferrer" title="Open MemShield Monitor: hourly canary checks, RLS posture drift, Cloud Monitoring alerts, and DPDP incident reports">
+    <nav class="product-nav" id="productNav" aria-label="MemShield products" hidden>
+      <a class="btn-monitor" id="linkMonitor" href="#" target="_blank" rel="noopener noreferrer" title="Open MemShield Monitor: hourly canary checks, RLS posture drift, Cloud Monitoring alerts, and DPDP incident reports">
         <span class="mon-dot" aria-hidden="true"></span>
         <span>MemShield Monitor (Live Status &amp; DPDP Reports) &#8599;</span>
       </a>
@@ -732,6 +732,13 @@
 
     function renderStatus() {
       $("versionChip").textContent = `v${arena.arena_version} · adk-memshield ${arena.memshield_version}`;
+      const monUrl = (arena.monitor_url || "").trim();
+      const navEl = $("productNav");
+      const monLink = $("linkMonitor");
+      if (navEl && monLink && /^https?:\/\//i.test(monUrl)) {
+        monLink.href = monUrl;
+        navEl.hidden = false;
+      }
       const db = arena.db_posture || {};
       if (!db.ok) {
         setChip("dbChip", "bad", "DB posture: probe failed", db.error || "");

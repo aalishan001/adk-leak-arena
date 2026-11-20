@@ -498,6 +498,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
                 "gemini_api": f"Running Gemini ({cfg.gemini_model})...",
             },
             "public_mode": cfg.public_mode,
+            "monitor_url": cfg.monitor_url,
             "public_restrictions": {
                 "targets": list(PUBLIC_TARGETS),
                 "engines": ["deterministic_agent"],

@@ -107,6 +107,9 @@ class ArenaConfig:
     # Optional generic pre_write hook (`module:attr`) passed to adk-memshield. Off by default;
     # refused when public_mode is enabled so a public service never loads external code.
     pre_write_hook: str = field(default_factory=lambda: os.environ.get("ARENA_PRE_WRITE_HOOK", "").strip())
+    # Optional URL of a companion MemShield Monitor dashboard, rendered as a top-bar nav link
+    # when configured (empty by default so local/offline runs contain no external URLs).
+    monitor_url: str = field(default_factory=lambda: os.environ.get("ARENA_MONITOR_URL", "").strip())
     # Max seconds to retry transient PostgreSQL OperationalError on connect (useful when a
     # scale-to-zero database like AlloyDB Express wakes up from idle; 0 disables retry).
     db_connect_wait_s: float = field(
