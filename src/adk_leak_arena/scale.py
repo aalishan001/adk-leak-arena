@@ -327,14 +327,15 @@ def _insert_rows_rls(config: ArenaConfig, rows: list[tuple[Any, ...]]) -> None:
 def _delete_tagged(config: ArenaConfig, json_key: str, value: str) -> int:
     """Delete rows whose custom_metadata[json_key] == value from both tables."""
     where = "custom_metadata->>%s = %s"
-    try:
-        with psycopg.connect(config.admin_dsn, autocommit=True, connect_timeout=5) as conn:
-            deleted = 0
-            for table in TABLES:
-                deleted += conn.execute(f"DELETE FROM {table} WHERE {where}", (json_key, value)).rowcount
-            return deleted
-    except psycopg.OperationalError:
-        pass
+    if config.admin_dsn:
+        try:
+            with psycopg.connect(config.admin_dsn, autocommit=True, connect_timeout=5) as conn:
+                deleted = 0
+                for table in TABLES:
+                    deleted += conn.execute(f"DELETE FROM {table} WHERE {where}", (json_key, value)).rowcount
+                return deleted
+        except psycopg.OperationalError:
+            pass
     # Fallback: unprotected table has no RLS; `memories` is cleaned per owner under RLS.
     with psycopg.connect(config.db_dsn, autocommit=True) as conn:
         owners = conn.execute(

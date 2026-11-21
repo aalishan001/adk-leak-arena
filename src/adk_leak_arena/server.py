@@ -513,7 +513,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
                     if (cfg.public_allow_gemini and cfg.gemini_api_key)
                     else ["deterministic_agent"]
                 ),
-                "blocked_presets": sorted(SCENARIO_FIXTURES),
+                "blocked_presets": [] if cfg.public_allow_fixtures else sorted(SCENARIO_FIXTURES),
             },
             "targets": {
                 "default": list(DEFAULT_TARGETS),
@@ -571,7 +571,7 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             extra = sorted(set(req.targets) - set(PUBLIC_TARGETS))
             if extra:
                 raise HTTPException(status_code=403, detail=f"public mode does not offer targets {extra}")
-            if (req.preset_id or "S1") in SCENARIO_FIXTURES:
+            if not cfg.public_allow_fixtures and (req.preset_id or "S1") in SCENARIO_FIXTURES:
                 raise HTTPException(status_code=403, detail="this scenario plants fixture rows; not available in public mode")
         await _ensure_seeded()
         await _ensure_db_awake()
