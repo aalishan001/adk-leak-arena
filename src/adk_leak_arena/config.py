@@ -104,6 +104,8 @@ class ArenaConfig:
     # Read-only console for public deployments: inject, reset, rescale, benchmark jobs and
     # history deletion return 403 (and are hidden in the console); attacks still run.
     public_mode: bool = field(default_factory=lambda: _env_flag("ARENA_PUBLIC_MODE", "0"))
+    # Opt-in flag to allow live Gemini API attacks in public mode while event credits are active.
+    public_allow_gemini: bool = field(default_factory=lambda: _env_flag("ARENA_PUBLIC_ALLOW_GEMINI", "0"))
     # Optional generic pre_write hook (`module:attr`) passed to adk-memshield. Off by default;
     # refused when public_mode is enabled so a public service never loads external code.
     pre_write_hook: str = field(default_factory=lambda: os.environ.get("ARENA_PRE_WRITE_HOOK", "").strip())

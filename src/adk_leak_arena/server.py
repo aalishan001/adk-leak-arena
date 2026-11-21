@@ -508,7 +508,11 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
             "monitor_url": cfg.monitor_url,
             "public_restrictions": {
                 "targets": list(PUBLIC_TARGETS),
-                "engines": ["deterministic_agent"],
+                "engines": (
+                    ["deterministic_agent", "gemini_api"]
+                    if (cfg.public_allow_gemini and cfg.gemini_api_key)
+                    else ["deterministic_agent"]
+                ),
                 "blocked_presets": sorted(SCENARIO_FIXTURES),
             },
             "targets": {
@@ -552,10 +556,18 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
     async def execute_attack(req: AttackRequest) -> dict[str, Any]:
         nonlocal last_db_ok
         if cfg.public_mode:
-            # Read-only and free to serve: no paid or local-GPU engines, no stores that need
-            # resetting, no presets that plant fixture rows, nothing on the admin DSN.
-            if req.engine != "deterministic_agent":
-                raise HTTPException(status_code=403, detail="public mode runs the deterministic_agent engine only")
+            # Read-only console: no local-GPU engines, no stores that need resetting,
+            # no presets that plant fixture rows, nothing on the admin DSN.
+            allowed_engines = (
+                ("deterministic_agent", "gemini_api")
+                if (cfg.public_allow_gemini and cfg.gemini_api_key)
+                else ("deterministic_agent",)
+            )
+            if req.engine not in allowed_engines:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"public mode runs {', '.join(allowed_engines)} only",
+                )
             extra = sorted(set(req.targets) - set(PUBLIC_TARGETS))
             if extra:
                 raise HTTPException(status_code=403, detail=f"public mode does not offer targets {extra}")
