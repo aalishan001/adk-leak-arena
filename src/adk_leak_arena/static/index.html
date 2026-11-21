@@ -8,31 +8,37 @@
     /* 100% offline: no external fonts, scripts, or stylesheets. */
     :root {
       color-scheme: dark;
-      --bg: #08090c;
-      --panel: #0e1116;
-      --card: #12161d;
-      --code: #0a0d12;
-      --line: #1d232d;
-      --line-strong: #2b3340;
-      --text: #e8eaee;
-      --muted: #b4bdcb;
-      --dim: #a3aec0;
-      --blue: #6cb6ff;
-      --red: #ff6b6b;
-      --red-bg: rgba(255, 107, 107, 0.12);
-      --red-line: rgba(255, 107, 107, 0.5);
-      --green: #4ade80;
-      --green-bg: rgba(74, 222, 128, 0.10);
-      --green-line: rgba(74, 222, 128, 0.45);
+      --bg: #060911;
+      --panel: #0d1320;
+      --card: #11192a;
+      --code: #080d17;
+      --line: rgba(148, 163, 184, 0.14);
+      --line-strong: rgba(148, 163, 184, 0.24);
+      --text: #f1f5f9;
+      --muted: #cbd5e1;
+      --dim: #94a3b8;
+      --blue: #60a5fa;
+      --red: #f87171;
+      --red-bg: rgba(248, 113, 113, 0.12);
+      --red-line: rgba(248, 113, 113, 0.45);
+      --green: #34d399;
+      --green-bg: rgba(52, 211, 153, 0.11);
+      --green-line: rgba(52, 211, 153, 0.45);
       --amber: #fbbf24;
       --amber-bg: rgba(251, 191, 36, 0.12);
-      --amber-line: rgba(251, 191, 36, 0.5);
-      --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --amber-line: rgba(251, 191, 36, 0.48);
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
       --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: var(--bg); }
-    body { color: var(--text); font: 13px/1.45 var(--sans); min-height: 100vh; }
+    html, body {
+      background:
+        radial-gradient(ellipse 80% 42% at 18% 0%, rgba(37, 99, 235, 0.14), transparent 60%),
+        radial-gradient(ellipse 65% 38% at 86% 0%, rgba(5, 150, 105, 0.12), transparent 58%),
+        var(--bg);
+      background-attachment: fixed;
+    }
+    body { color: var(--text); font: 13.5px/1.5 var(--sans); min-height: 100vh; -webkit-font-smoothing: antialiased; }
     button, select, input { font: inherit; color: inherit; }
     .mono { font-family: var(--mono); }
     .muted { color: var(--muted); }
@@ -44,17 +50,58 @@
       50% { background-position: 100% 50%; }
       100% { background-position: 0% 50%; }
     }
-    .topbar {
-      position: sticky; top: 0; z-index: 40;
-      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
-      padding: 9px 16px;
-      background:
-        linear-gradient(125deg, rgba(14, 17, 22, 0.94) 15%, rgba(20, 38, 68, 0.72) 48%, rgba(16, 52, 44, 0.70) 78%, rgba(14, 17, 22, 0.95) 100%),
-        var(--panel);
-      background-size: 240% 240%;
-      animation: auroraShift 14s ease infinite;
+    .suite-bar {
+      position: sticky; top: 0; z-index: 60;
+      background: rgba(6, 9, 17, 0.92);
+      backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--line-strong);
-      backdrop-filter: blur(8px);
+      padding: 10px 20px;
+    }
+    .suite-inner {
+      max-width: 1480px; margin: 0 auto;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .suite-brand { display: inline-flex; align-items: center; gap: 10px; color: #f8fafc; text-decoration: none; font-weight: 700; font-size: 15px; letter-spacing: -0.015em; }
+    .suite-brand-sub { color: #94a3b8; font-weight: 500; font-size: 12.5px; border-left: 1px solid var(--line-strong); padding-left: 10px; }
+    .suite-nav { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--line-strong); padding: 4px; border-radius: 10px; }
+    .suite-tab {
+      display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 7px;
+      color: #cbd5e1; text-decoration: none; font-size: 12.5px; font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+    .suite-tab:hover { background: rgba(51, 65, 85, 0.55); color: #ffffff; }
+    .suite-tab.active { background: #1d4ed8; color: #ffffff; box-shadow: 0 2px 10px rgba(29, 78, 216, 0.35); }
+    .suite-tab.mon-highlight { color: #d1fae5; }
+    .suite-tab.mon-highlight:hover { background: rgba(5, 150, 105, 0.32); color: #ffffff; }
+    .suite-step { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.16); color: #ffffff; }
+    .hero-guide {
+      max-width: 1448px; margin: 14px auto 0; padding: 16px 20px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(29, 78, 216, 0.16) 0%, rgba(13, 19, 32, 0.94) 52%, rgba(5, 150, 105, 0.14) 100%);
+      border: 1px solid rgba(96, 165, 250, 0.28);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px;
+    }
+    .hero-copy { max-width: 78ch; }
+    .hero-kicker { font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: #93c5fd; margin-bottom: 4px; }
+    .hero-title { font-size: 18px; font-weight: 700; color: #f8fafc; letter-spacing: -0.015em; margin-bottom: 4px; }
+    .hero-desc { font-size: 13px; color: #cbd5e1; line-height: 1.5; }
+    .hero-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .step-cta {
+      display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 8px;
+      font-size: 12.5px; font-weight: 700; text-decoration: none; cursor: pointer;
+      border: 1px solid var(--line-strong); background: rgba(15, 23, 42, 0.85); color: #f1f5f9;
+      transition: transform 0.12s, background 0.15s, border-color 0.15s;
+    }
+    .step-cta:hover { background: rgba(30, 41, 59, 0.95); border-color: #60a5fa; color: #ffffff; }
+    .step-cta.primary { background: #1d4ed8; border-color: #3b82f6; color: #ffffff; box-shadow: 0 4px 14px rgba(29, 78, 216, 0.38); }
+    .step-cta.primary:hover { background: #1e40af; }
+    .step-cta.emerald { background: #065f46; border-color: #10b981; color: #ecfdf5; }
+    .step-cta.emerald:hover { background: #047857; color: #ffffff; }
+    .topbar {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+      max-width: 1480px; margin: 0 auto; padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
     }
     .svg-ico { width: 13px; height: 13px; vertical-align: -2px; fill: currentColor; flex-shrink: 0; }
     .dot-red, .dot-emerald, .dot-amber {
@@ -112,7 +159,8 @@
 
     /* ---------- control panel ---------- */
     .controls {
-      margin: 12px 16px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+      max-width: 1448px; margin: 14px auto; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
       display: flex; flex-direction: column; gap: 10px;
     }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -150,9 +198,9 @@
     .error-banner.show { display: block; }
 
     /* ---------- arena panes ---------- */
-    .arena { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 0 16px 24px; }
+    .arena { max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 0 16px 28px; }
     @media (max-width: 1150px) { .arena { grid-template-columns: minmax(0, 1fr); } }
-    .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .pane { background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 14px 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.30); display: flex; flex-direction: column; gap: 11px; min-width: 0; }
     .pane.left { border-top: 3px solid var(--red); }
     .pane.right { border-top: 3px solid var(--green); }
     .pane-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
@@ -326,7 +374,7 @@
     .target-picker .tp-list { position: absolute; z-index: 20; margin-top: 4px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; min-width: 220px; }
     .target-picker label { display: flex; gap: 8px; align-items: center; font: 12px var(--sans); color: #e2e8f0; padding: 3px 0; }
     .perf-strip {
-      margin: 0 16px 12px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 7px;
+      max-width: 1448px; margin: 0 auto 14px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 10px;
       background: var(--panel); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
       font: 12px var(--mono); color: #e2e8f0;
     }
@@ -350,25 +398,46 @@
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
-  <header class="topbar">
-    <div class="brand">
-      <svg viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
-        <path d="M18 2 L32 7.5 V17.5 C32 25.2 26.1 31.1 18 33 C9.9 31.1 4 25.2 4 17.5 V7.5 Z" fill="#1a73e8"/>
-        <path d="M18 5.2 L28.8 9.5 V17.2 C28.8 23.1 24.2 27.8 18 29.5 V5.2 Z" fill="#137333"/>
-        <rect x="11.5" y="12" width="13" height="3.2" rx="1.2" fill="#ffffff"/>
-        <rect x="11.5" y="17" width="13" height="3.2" rx="1.2" fill="#ffffff" opacity="0.92"/>
-        <rect x="11.5" y="22" width="9" height="3.2" rx="1.2" fill="#ffffff" opacity="0.85"/>
-      </svg>
-      <span class="brand-name">MemShield &middot; adk-leak-arena</span>
-      <span class="chip plain" id="versionChip">v0.1.0</span>
-      <span class="brand-sub">Red-team memory isolation inspector &middot; Unprotected pgvector vs adk-memshield (PostgreSQL RLS)</span>
-    </div>
-    <nav class="product-nav" id="productNav" aria-label="MemShield products" hidden>
-      <a class="btn-monitor" id="linkMonitor" href="#" target="_blank" rel="noopener noreferrer" title="Open MemShield Monitor: hourly canary checks, RLS posture drift, Cloud Monitoring alerts, and DPDP incident reports">
-        <span class="mon-dot" aria-hidden="true"></span>
-        <span>MemShield Monitor (Live Status &amp; DPDP Reports) &#8599;</span>
+  <header class="suite-bar">
+    <div class="suite-inner">
+      <a class="suite-brand" href="/">
+        <svg viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
+          <path d="M18 2 L32 7.5 V17.5 C32 25.2 26.1 31.1 18 33 C9.9 31.1 4 25.2 4 17.5 V7.5 Z" fill="#2563eb"/>
+          <path d="M18 5.2 L28.8 9.5 V17.2 C28.8 23.1 24.2 27.8 18 29.5 V5.2 Z" fill="#059669"/>
+          <rect x="11.5" y="12" width="13" height="3.2" rx="1.2" fill="#ffffff"/>
+          <rect x="11.5" y="17" width="13" height="3.2" rx="1.2" fill="#ffffff" opacity="0.92"/>
+          <rect x="11.5" y="22" width="9" height="3.2" rx="1.2" fill="#ffffff" opacity="0.85"/>
+        </svg>
+        <span>MemShield</span>
+        <span class="suite-brand-sub">Zero-Trust AI Memory Suite</span>
       </a>
-    </nav>
+      <nav class="suite-nav" aria-label="MemShield Suite Navigation">
+        <a class="suite-tab active" href="/" aria-current="page"><span class="suite-step">1</span>Live Red-Team Console</a>
+        <a class="suite-tab mon-highlight" id="linkMonitor" href="#" hidden><span class="suite-step">2</span>Continuous Monitor &amp; DPDP</a>
+        <a class="suite-tab" href="/guide"><span class="suite-step">3</span>How It Works (Diagrams)</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero-guide" aria-label="Interactive prototype walkthrough">
+    <div class="hero-copy">
+      <div class="hero-kicker">Interactive Prototype &middot; Cloud Run + AlloyDB Express (PG 18.4)</div>
+      <h1 class="hero-title">See a cross-tenant AI memory leak happen live &mdash; and watch PostgreSQL stop it in the kernel.</h1>
+      <p class="hero-desc">An LLM never touches a database; it only answers from the memories your agent puts into the prompt. Run S5 below to strip the SQL <code>WHERE</code> clause completely on both sides, then inspect continuous hourly alerts and DPDP reports in Monitor or read the plain-language architecture diagrams.</p>
+    </div>
+    <div class="hero-steps">
+      <button class="step-cta primary" id="btnGuidedS5" type="button">Step 1: Run S5 No-WHERE Attack &rarr;</button>
+      <a class="step-cta emerald" id="heroMonitorLink" href="#" hidden>Step 2: Live Monitor &amp; DPDP Reports &rarr;</a>
+      <a class="step-cta" href="/guide">Step 3: How It Works (Diagrams) &rarr;</a>
+    </div>
+  </section>
+
+  <div class="topbar" role="region" aria-label="Console telemetry and runtime controls">
+    <div class="brand">
+      <span class="brand-name">adk-leak-arena</span>
+      <span class="chip plain" id="versionChip">v0.1.0</span>
+      <span class="brand-sub">Unprotected pgvector vs adk-memshield (PostgreSQL FORCE RLS)</span>
+    </div>
     <div class="status-row" aria-label="Runtime status">
       <span class="chip" id="dbChip" title="Database role privileges and RLS flags read from pg_roles / pg_class">DB: probing...</span>
       <span class="chip" id="ollamaChip" title="Local Ollama status">Ollama: probing...</span>
@@ -392,7 +461,7 @@
       </button>
       <button class="btn" id="btnReset" type="button">Reset / re-seed DB</button>
     </div>
-  </header>
+  </div>
 
   <section class="controls" aria-label="Attack controls">
     <div class="row spread">
@@ -733,11 +802,11 @@
     function renderStatus() {
       $("versionChip").textContent = `v${arena.arena_version} · adk-memshield ${arena.memshield_version}`;
       const monUrl = (arena.monitor_url || "").trim();
-      const navEl = $("productNav");
-      const monLink = $("linkMonitor");
-      if (navEl && monLink && /^https?:\/\//i.test(monUrl)) {
-        monLink.href = monUrl;
-        navEl.hidden = false;
+      if (/^https?:\/\//i.test(monUrl)) {
+        for (const id of ["linkMonitor", "heroMonitorLink"]) {
+          const el = $(id);
+          if (el) { el.href = monUrl; el.hidden = false; }
+        }
       }
       const db = arena.db_posture || {};
       if (!db.ok) {
@@ -1479,6 +1548,12 @@
 
     function wire() {
       $("btnRunAttack").addEventListener("click", runAttack);
+      if ($("btnGuidedS5")) {
+        $("btnGuidedS5").addEventListener("click", () => {
+          selectPreset("S5");
+          $("btnRunAttack").click();
+        });
+      }
       // Enter is a keyboard shortcut for the Run button itself, not a separate execution path.
       $("queryInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnRunAttack").click(); });
       $("querySelect").addEventListener("change", () => {

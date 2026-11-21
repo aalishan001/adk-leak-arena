@@ -55,6 +55,7 @@ from .unprotected_service import FailureMode
 logger = logging.getLogger(__name__)
 
 _STATIC_INDEX = Path(__file__).resolve().parent / "static" / "index.html"
+_STATIC_GUIDE = Path(__file__).resolve().parent / "static" / "guide.html"
 # Databases (by application DSN) this process has seeded or found seeded.
 _INITIALIZED: set[str] = set()
 
@@ -450,6 +451,12 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
         return HTMLResponse(content=_STATIC_INDEX.read_text(encoding="utf-8"))
+
+    @app.get("/guide", response_class=HTMLResponse)
+    async def guide() -> HTMLResponse:
+        html = _STATIC_GUIDE.read_text(encoding="utf-8")
+        mon = cfg.monitor_url or "/"
+        return HTMLResponse(content=html.replace("__MONITOR_URL__", mon))
 
     @app.get("/api/state")
     async def get_state() -> dict[str, Any]:
