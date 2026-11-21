@@ -27,8 +27,9 @@
       --amber: #fbbf24;
       --amber-bg: rgba(251, 191, 36, 0.12);
       --amber-line: rgba(251, 191, 36, 0.48);
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-      --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, monospace;
+      --sans: "Inter", "Segoe UI Variable Text", "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --display: "Plus Jakarta Sans", "Inter", "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -400,21 +401,14 @@
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="suite-bar">
     <div class="suite-inner">
-      <a class="suite-brand" href="/">
-        <svg viewBox="0 0 36 36" width="24" height="24" role="img" aria-label="MemShield shield">
-          <path d="M18 2 L32 7.5 V17.5 C32 25.2 26.1 31.1 18 33 C9.9 31.1 4 25.2 4 17.5 V7.5 Z" fill="#2563eb"/>
-          <path d="M18 5.2 L28.8 9.5 V17.2 C28.8 23.1 24.2 27.8 18 29.5 V5.2 Z" fill="#059669"/>
-          <rect x="11.5" y="12" width="13" height="3.2" rx="1.2" fill="#ffffff"/>
-          <rect x="11.5" y="17" width="13" height="3.2" rx="1.2" fill="#ffffff" opacity="0.92"/>
-          <rect x="11.5" y="22" width="9" height="3.2" rx="1.2" fill="#ffffff" opacity="0.85"/>
-        </svg>
+      <a class="suite-brand" href="/" style="font-family:var(--display);font-weight:800;letter-spacing:-0.025em;">
         <span>MemShield</span>
         <span class="suite-brand-sub">Zero-Trust AI Memory Suite</span>
       </a>
       <nav class="suite-nav" aria-label="MemShield Suite Navigation">
         <a class="suite-tab active" href="/" aria-current="page"><span class="suite-step">1</span>Live Red-Team Console</a>
         <a class="suite-tab mon-highlight" id="linkMonitor" href="#" hidden><span class="suite-step">2</span>Continuous Monitor &amp; DPDP</a>
-        <a class="suite-tab" href="/guide"><span class="suite-step">3</span>How It Works (Diagrams)</a>
+        <a class="suite-tab" href="/guide"><span class="suite-step">3</span>Architecture</a>
       </nav>
     </div>
   </header>
@@ -422,13 +416,13 @@
   <section class="hero-guide" aria-label="Interactive prototype walkthrough">
     <div class="hero-copy">
       <div class="hero-kicker">Interactive Prototype &middot; Cloud Run + AlloyDB Express (PG 18.4)</div>
-      <h1 class="hero-title">See a cross-tenant AI memory leak happen live &mdash; and watch PostgreSQL stop it in the kernel.</h1>
-      <p class="hero-desc">An LLM never touches a database; it only answers from the memories your agent puts into the prompt. Run S5 below to strip the SQL <code>WHERE</code> clause completely on both sides, then inspect continuous hourly alerts and DPDP reports in Monitor or read the plain-language architecture diagrams.</p>
+      <h1 class="hero-title" style="font-family:var(--display);">See a cross-tenant AI memory leak happen live &mdash; and watch PostgreSQL stop it in the kernel.</h1>
+      <p class="hero-desc">An LLM never touches a database; it only answers from the memories your agent puts into the prompt. Run S5 below to strip the SQL <code>WHERE</code> clause completely on both sides, then inspect continuous hourly alerts and DPDP reports in Monitor or review the system architecture.</p>
     </div>
     <div class="hero-steps">
       <button class="step-cta primary" id="btnGuidedS5" type="button">Step 1: Run S5 No-WHERE Attack &rarr;</button>
       <a class="step-cta emerald" id="heroMonitorLink" href="#" hidden>Step 2: Live Monitor &amp; DPDP Reports &rarr;</a>
-      <a class="step-cta" href="/guide">Step 3: How It Works (Diagrams) &rarr;</a>
+      <a class="step-cta" href="/guide">Step 3: Architecture &rarr;</a>
     </div>
   </section>
 
