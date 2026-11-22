@@ -9,7 +9,10 @@
 [![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4.svg)](https://google.github.io/adk-docs/)
 [![adk-memshield on PyPI](https://img.shields.io/pypi/v/adk-memshield?label=adk-memshield)](https://pypi.org/project/adk-memshield/)
 
-### Live Hosted Demos & Evidence
+## Live Hosted Demos & Evidence
+
+Public, read-only and rate-limited: one Cloud Run instance with at most 10 concurrent requests, Gemini calls throttled to 6 per minute, and a database that scales to zero when idle.
+
 - **Live LeakArena Console:** https://adk-leak-arena-268336845218.asia-southeast1.run.app (Cloud Run + AlloyDB Express PG 18.4; `39/40 -> 0/40` leaks, `100%` clean recall; WCAG 2.2 AA / 0 serious axe-core violations)
 - **Live MemShield Monitor:** https://memshield-monitor-268336845218.asia-southeast1.run.app (hourly canary/RLS checks, Cloud Monitoring alerts, DPDP operational reports; WCAG 2.2 AA)
 - **Saved Benchmark & Audit Runs:** [`benchmarks/runs/2026-11-20/`](benchmarks/runs/2026-11-20/) (Gemini live `108/108`, adaptive red-team `5/5 -> 0/5`, Qdrant `92.3%` & Mem0 `95.7%` wrong-filter leaks, cold-start 200 verification, `axe-audit.txt`)
@@ -27,7 +30,7 @@ Other stores join the same run with `--targets`: Qdrant (payload filters), Mem0 
 
 *S5 (no SQL `WHERE` clause) as `alice_analyst`: the left target returns three unauthorized rows, including cross-tenant ones, and the agent repeats their canary tokens. The right target returns only rows Alice is entitled to: her own, plus tenant-shared rows at or below her clearance that are untagged or share a compartment with her. Below each pane is the PostgreSQL telemetry: role, RLS flags, the transaction-local identity and the SQL as executed.*
 
-## Live Hosted Demo
+## Hosted Demo Setup
 
 A read-only public instance runs on Google Cloud Run backed by **AlloyDB Express** (PostgreSQL 18.4, `asia-southeast1` Singapore prototype on synthetic data because AlloyDB Express is not yet in Mumbai — production target: Mumbai (`asia-south1`) for India DPDP data residency; `ARENA_PUBLIC_MODE=1`, single replica, scale-to-zero):
 
