@@ -71,7 +71,10 @@ def test_ui_and_state_endpoints(client: TestClient) -> None:
     assert "adk-leak-arena" in resp_html.text
     assert "Unprotected pgvector" in resp_html.text
     assert "adk-memshield" in resp_html.text
-    assert "http://" not in resp_html.text and "https://" not in resp_html.text  # offline: no CDN
+    # offline: nothing is loaded from another host (no CDN script, stylesheet, font or image);
+    # plain outbound <a> links (the author credit) load nothing and are allowed
+    assert not re.search(r"""(src=|<link[^>]*href=|url\(|@import)\s*["']?(https?:)?//""", resp_html.text, re.I)
+    assert 'href="https://aalishan001.com"' in resp_html.text
     for ui_id in (
         "topKSelect",
         "seedSizeSelect",

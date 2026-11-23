@@ -395,6 +395,10 @@
       .arena { padding: 0 16px 20px; }
       .modal { padding: 8px; }
     }
+    .credit { max-width: 1480px; margin: 0 auto; padding: 14px 16px 26px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; border-top: 1px solid var(--line-strong, var(--border)); font-size: 12.5px; color: var(--muted, var(--text)); }
+    .credit-links { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+    .credit-links a { display: inline-flex; align-items: center; min-height: 28px; padding: 2px 8px; border-radius: 6px; color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    .credit-links a:hover { background: rgba(96, 165, 250, 0.14); }
   </style>
 </head>
 <body>
@@ -672,6 +676,11 @@
       <div class="modal-body" id="datasetBody"></div>
     </div>
   </div>
+
+  <footer class="credit">
+    <span>Built by Aalishan Khan</span>
+    <nav class="credit-links" aria-label="Author profiles"><a href="https://aalishan001.com" target="_blank" rel="noopener me">aalishan001.com</a><a href="https://github.com/aalishan001" target="_blank" rel="noopener me">GitHub</a><a href="https://linkedin.com/in/aalishan001" target="_blank" rel="noopener me">LinkedIn</a><a href="https://dev.to/aalishan001" target="_blank" rel="noopener me">dev.to</a></nav>
+  </footer>
 
   <script>
     "use strict";
