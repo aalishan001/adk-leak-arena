@@ -1,0 +1,14 @@
+# MemShield suite (adk-leak-arena)
+
+> A live red-team console for AI agent memory: the same attacks against an unprotected pgvector table and against adk-memshield, which enforces isolation in PostgreSQL with FORCE ROW LEVEL SECURITY. Synthetic data, public prototype.
+
+Every page is also available as markdown, and each page's header has a human/agent switch that shows the same markdown in place.
+
+## Pages
+- [Live Red-Team Console](/index.md): attack scenarios side by side, and the JSON API
+- [Architecture](/guide.md): how agent memory leaks, and how MemShield stops it in the database
+- [Continuous Monitor and DPDP reports](https://memshield-monitor-268336845218.asia-southeast1.run.app/index.md)
+
+## Source
+- https://github.com/aalishan001/adk-leak-arena
+- https://github.com/aalishan001/adk-memshield

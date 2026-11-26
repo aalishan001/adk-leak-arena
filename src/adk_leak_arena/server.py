@@ -15,7 +15,7 @@ import adk_memshield
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from . import __version__
@@ -457,6 +457,18 @@ def create_app(config: ArenaConfig | None = None) -> FastAPI:
         html = _STATIC_GUIDE.read_text(encoding="utf-8")
         mon = cfg.monitor_url or "/"
         return HTMLResponse(content=html.replace("__MONITOR_URL__", mon))
+
+    @app.get("/index.md")
+    async def index_md() -> Response:
+        return Response(_STATIC_INDEX.with_name("index.md").read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+
+    @app.get("/guide.md")
+    async def guide_md() -> Response:
+        return Response(_STATIC_INDEX.with_name("guide.md").read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+
+    @app.get("/llms.txt")
+    async def llms_txt() -> Response:
+        return Response(_STATIC_INDEX.with_name("llms.txt").read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
 
     @app.get("/api/state")
     async def get_state() -> dict[str, Any]:

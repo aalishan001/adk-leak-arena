@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <script>(function(){try{var d=document.documentElement,s=localStorage,t=s.getItem('theme');d.dataset.theme=(t==='light'||t==='dark')?t:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');if(s.getItem('view')==='agent')d.dataset.view='agent';if(sessionStorage.getItem('px')==='1'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)d.dataset.px='in';sessionStorage.removeItem('px')}catch(e){}})();</script>
+  <link rel="alternate" type="text/markdown" href="/index.md" title="This page as markdown">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>adk-leak-arena · Memory Leak Inspector</title>
   <style>
@@ -399,6 +401,102 @@
     .credit-links { display: flex; flex-wrap: wrap; gap: 4px 6px; }
     .credit-links a { display: inline-flex; align-items: center; min-height: 28px; padding: 2px 8px; border-radius: 6px; color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
     .credit-links a:hover { background: rgba(96, 165, 250, 0.14); }
+      /* suite-modes:start */
+    /* ---------- suite modes: human/agent view, light/dark theme, pixel transition (shared by all MemShield pages) ---------- */
+    :root { --sm-text: #e2e8f0; --sm-dim: #94a3b8; --sm-line: rgba(148, 163, 184, 0.28); --sm-active: rgba(51, 65, 85, 0.6); --sm-accent: #60a5fa; --sm-panel: #0d1320; --sm-tile: #1e293b; }
+    [data-theme="light"] { --sm-text: #0f172a; --sm-dim: #475569; --sm-line: #cbd5e1; --sm-active: #e2e8f0; --sm-accent: #1d4ed8; --sm-panel: #ffffff; --sm-tile: #dbe3ee; }
+    .sm-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .sm-switch { display: flex; margin: 0; padding: 0; border: 1px solid var(--sm-line); border-radius: 8px; overflow: hidden; font: 600 12px/1 var(--mono, monospace); }
+    .sm-switch legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .sm-switch label { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 11px; color: var(--sm-dim); cursor: pointer; user-select: none; }
+    .sm-switch label:hover { color: var(--sm-text); }
+    .sm-switch label:has(input:checked) { color: var(--sm-text); background: var(--sm-active); }
+    .sm-switch label:has(input:focus-visible) { outline: 2px solid var(--sm-accent); outline-offset: -2px; }
+    .sm-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .sm-box { width: 8px; height: 8px; border: 1.5px solid currentColor; }
+    .sm-switch input:checked + .sm-box { background: var(--sm-accent); border-color: var(--sm-accent); }
+    .sm-theme { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--sm-line); border-radius: 8px; background: transparent; color: var(--sm-text); cursor: pointer; }
+    .sm-theme:hover { border-color: var(--sm-accent); }
+    .sm-theme:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
+    .sm-theme .i-moon { display: none; }
+    [data-theme="light"] .sm-theme .i-sun { display: none; }
+    [data-theme="light"] .sm-theme .i-moon { display: block; }
+    .agent-view { display: none; }
+    [data-view="agent"] .agent-view { display: block; max-width: 980px; margin: 28px auto 72px; padding: 0 20px; }
+    [data-view="agent"] body > :not(.suite-bar):not(.agent-view):not(.skip-link):not(script):not(style):not(.px-overlay) { display: none !important; }
+    .agent-view h1 { margin: 0 0 8px; font: 700 1.1rem/1.4 var(--display, sans-serif); color: var(--sm-text); }
+    .agent-note { margin: 0 0 16px; font-size: 13px; color: var(--sm-dim); }
+    .agent-note a { color: var(--sm-accent); }
+    .agent-md { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 var(--mono, monospace); color: var(--sm-text); background: var(--sm-panel); border: 1px solid var(--sm-line); border-radius: 10px; padding: 20px 22px; }
+    .px-overlay { position: fixed; inset: 0; z-index: 9999; pointer-events: none; display: grid; grid-template-columns: repeat(12, 1fr); }
+    .px-tile { background: var(--sm-tile); transform: scale(0); opacity: 0; }
+    .px-tile.on { transform: scale(1); opacity: 1; }
+    html[data-px="in"] body::after { content: ""; position: fixed; inset: 0; z-index: 9998; background: var(--sm-tile); }
+    /* the suite bar in the light theme (same markup on every page) */
+    [data-theme="light"] .suite-bar { background: rgba(255, 255, 255, 0.92); }
+    [data-theme="light"] .suite-brand { color: #0f172a; }
+    [data-theme="light"] .suite-brand-sub { color: #475569; border-left-color: #cbd5e1; }
+    [data-theme="light"] .suite-nav { background: #f1f5f9; border-color: #e2e8f0; }
+    [data-theme="light"] .suite-tab { color: #334155; }
+    [data-theme="light"] .suite-tab:hover { background: #e2e8f0; color: #0f172a; }
+    [data-theme="light"] .suite-tab.active, [data-theme="light"] .suite-tab.active:hover { color: #ffffff; }
+    [data-theme="light"] .suite-tab.mon-highlight { color: #047857; }
+    [data-theme="light"] .suite-step { background: rgba(15, 23, 42, 0.08); color: inherit; }
+    [data-theme="light"] .suite-tab.active .suite-step { background: rgba(255, 255, 255, 0.22); }
+    @media (prefers-reduced-motion: reduce) { .px-overlay { display: none !important; } }
+
+    [data-theme="light"] { color-scheme: light; --bg: #f6f7f9; --panel: #ffffff; --card: #ffffff; --code: #f1f5f9;
+      --line: rgba(15, 23, 42, 0.10); --line-strong: rgba(15, 23, 42, 0.18); --text: #0f172a; --muted: #334155; --dim: #475569;
+      --blue: #1d4ed8; --red: #b91c1c; --red-bg: #fef2f2; --red-line: #fca5a5; --green: #047857; --green-bg: #ecfdf5;
+      --green-line: #6ee7b7; --amber: #92400e; --amber-bg: #fffbeb; --amber-line: #fcd34d; }
+    html[data-theme="light"], html[data-theme="light"] body { background: radial-gradient(ellipse 80% 42% at 18% 0%, rgba(37, 99, 235, 0.07), transparent 60%), radial-gradient(ellipse 65% 38% at 86% 0%, rgba(5, 150, 105, 0.06), transparent 58%), var(--bg); background-attachment: fixed; }
+    [data-theme="light"] .hero-guide { background: linear-gradient(135deg, #eff6ff 0%, #ffffff 55%); border-color: #bfdbfe; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06); }
+    [data-theme="light"] .hero-kicker { color: #1d4ed8; }
+    [data-theme="light"] .hero-title { color: #0f172a; }
+    [data-theme="light"] .hero-desc { color: #334155; }
+    [data-theme="light"] .step-cta { background: #ffffff; color: #0f172a; }
+    [data-theme="light"] .step-cta:hover { background: #f1f5f9; color: #0f172a; }
+    [data-theme="light"] .step-cta.primary { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
+    [data-theme="light"] .step-cta.primary:hover { background: #1e40af; color: #ffffff; }
+    [data-theme="light"] .step-cta.emerald { background: #047857; color: #ffffff; }
+    [data-theme="light"] .btn { background: #ffffff; }
+    [data-theme="light"] .btn:hover:not(:disabled) { background: #f1f5f9; }
+    [data-theme="light"] .btn-primary, [data-theme="light"] .btn-primary:hover:not(:disabled) { color: #ffffff; }
+    [data-theme="light"] .btn-primary { background: #1d4ed8; border-color: #1d4ed8; }
+    [data-theme="light"] .btn-monitor { background: #ecfdf5; color: #065f46; }
+    [data-theme="light"] .btn-monitor:hover { background: #d1fae5; color: #064e3b; }
+    [data-theme="light"] .controls, [data-theme="light"] .pane { box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06); }
+    [data-theme="light"] .error-banner { color: #991b1b; }
+    [data-theme="light"] .output, [data-theme="light"] pre.md { color: #1e293b; }
+    [data-theme="light"] .canary.leaked { background: #fee2e2; color: #991b1b; }
+    [data-theme="light"] .canary.poisoned, [data-theme="light"] .load-banner { color: #92400e; }
+    [data-theme="light"] .reason.bad { color: #b91c1c; }
+    [data-theme="light"] .log-stream { color: #334155; }
+    [data-theme="light"] pre.sql { color: #1e40af; }
+    [data-theme="light"] pre.sql.rls { color: #047857; }
+    [data-theme="light"] pre.sql.norls { color: #b91c1c; }
+    [data-theme="light"] .modal { background: rgba(15, 23, 42, 0.45); }
+    [data-theme="light"] .modal-panel { box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25); }
+    [data-theme="light"] select { color: #0f172a; }
+    [data-theme="light"] select option, [data-theme="light"] select optgroup { background-color: #ffffff; color: #0f172a; }
+    [data-theme="light"] input::placeholder { color: #64748b; }
+    [data-theme="light"] a { color: #1d4ed8; }
+    [data-theme="light"] a.btn { color: #0f172a; }
+    [data-theme="light"] #btnRunAttack .ready-tag { background: #e2e8f0; color: #0f172a; }
+    [data-theme="light"] .xt-card { background: #ffffff; border-color: #e2e8f0; }
+    [data-theme="light"] .xt-card h3, [data-theme="light"] .perf-strip, [data-theme="light"] .perf-item .perf-v, [data-theme="light"] .target-picker label { color: #0f172a; }
+    [data-theme="light"] .xt-meta { color: #475569; }
+    [data-theme="light"] .xt-verdict.leak { background: #fee2e2; color: #991b1b; }
+    [data-theme="light"] .xt-verdict.ok { background: #d1fae5; color: #065f46; }
+    [data-theme="light"] .xt-verdict.na { background: #f1f5f9; color: #334155; }
+    [data-theme="light"] .xt-rows { color: #334155; }
+    [data-theme="light"] .xt-rows li { border-top-color: #e2e8f0; }
+    [data-theme="light"] .xt-rows li.leaked { color: #b91c1c; }
+    [data-theme="light"] .target-picker summary { color: #334155; border-color: #cbd5e1; }
+    [data-theme="light"] .target-picker .tp-list { background: #ffffff; border-color: #cbd5e1; }
+    [data-theme="light"] .perf-strip .perf-title { color: #4338ca; }
+    [data-theme="light"] .banner[style] { background: #f1f5f9 !important; }
+    /* suite-modes:end */
   </style>
 </head>
 <body>
@@ -414,8 +512,21 @@
         <a class="suite-tab mon-highlight" id="linkMonitor" href="#" hidden><span class="suite-step">2</span>Continuous Monitor &amp; DPDP</a>
         <a class="suite-tab" href="/guide"><span class="suite-step">3</span>Architecture</a>
       </nav>
+      <div class="sm-tools">
+        <fieldset class="sm-switch"><legend>Show this page for</legend>
+          <label><input type="radio" name="sm-view" value="human" checked><span class="sm-box" aria-hidden="true"></span>human</label>
+          <label><input type="radio" name="sm-view" value="agent"><span class="sm-box" aria-hidden="true"></span>agent</label>
+        </fieldset>
+        <button type="button" class="sm-theme" aria-label="Switch theme"><svg class="i-sun" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="i-moon" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
+      </div>
     </div>
   </header>
+
+  <section class="agent-view" aria-label="This page as markdown, for agents">
+    <h1>Agent view: Live Red-Team Console</h1>
+    <p class="agent-note">This page as plain markdown, also at <a href="/index.md">/index.md</a>; the suite is indexed in <a href="/llms.txt">/llms.txt</a>.</p>
+    <pre class="agent-md">Loading...</pre>
+  </section>
 
   <section class="hero-guide" aria-label="Interactive prototype walkthrough">
     <div class="hero-copy">
@@ -1630,6 +1741,106 @@
     }
 
     window.addEventListener("DOMContentLoaded", init);
+  </script>
+  <script>
+    /* suite modes: human/agent view, light/dark theme, pixel transition. Shared by every MemShield page. */
+    (function () {
+      var root = document.documentElement;
+      var reduced = function () { return matchMedia("(prefers-reduced-motion: reduce)").matches; };
+      var store = {
+        get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+        set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+      };
+      var COLS = 12, TILE = 140, SPREAD = 260;
+      function overlay(covered) {
+        var o = document.createElement("div");
+        o.className = "px-overlay"; o.setAttribute("aria-hidden", "true");
+        var size = innerWidth / COLS, rows = Math.max(1, Math.ceil(innerHeight / size));
+        o.style.gridTemplateRows = "repeat(" + rows + ", " + size + "px)";
+        for (var i = 0; i < COLS * rows; i++) { var c = document.createElement("div"); c.className = covered ? "px-tile on" : "px-tile"; o.appendChild(c); }
+        document.body.appendChild(o);
+        return o;
+      }
+      function play(o, show) {
+        var frames = show ? [{ transform: "scale(0)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }]
+                          : [{ transform: "scale(1)", opacity: 1 }, { transform: "scale(0)", opacity: 0 }];
+        var runs = Array.prototype.map.call(o.children, function (t) {
+          return t.animate(frames, { duration: TILE, delay: Math.random() * SPREAD, easing: "steps(3, end)", fill: "forwards" }).finished;
+        });
+        var cap = new Promise(function (r) { setTimeout(r, TILE + SPREAD + 200); });
+        return Promise.race([Promise.all(runs), cap]);
+      }
+      function cover() { if (reduced()) return Promise.resolve(null); var o = overlay(false); return play(o, true).then(function () { return o; }); }
+      function reveal(o) { if (!o) return Promise.resolve(); return play(o, false).then(function () { o.remove(); }); }
+
+      // arriving through a transition (same origin: sessionStorage; across the suite's two hosts: ?px=1)
+      var url = new URL(location.href);
+      if (url.searchParams.get("px") === "1") {
+        url.searchParams.delete("px"); history.replaceState(null, "", url.pathname + url.search + url.hash);
+        if (!reduced()) root.dataset.px = "in";
+      }
+      if (root.dataset.px === "in") {
+        var o0 = overlay(true); delete root.dataset.px;
+        requestAnimationFrame(function () { reveal(o0); });
+      }
+      addEventListener("pageshow", function (e) { if (e.persisted) document.querySelectorAll(".px-overlay").forEach(function (n) { n.remove(); }); });
+
+      // navigation between suite pages
+      document.addEventListener("click", function (e) {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        var a = e.target.closest && e.target.closest("a[href]");
+        if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+        var to = new URL(a.href, location.href);
+        if (to.pathname === location.pathname && to.origin === location.origin) return;
+        if (!/^https?:$/.test(to.protocol) || /\.[a-z0-9]+$/i.test(to.pathname) || to.pathname.indexOf("/api/") === 0) return;
+        var suite = to.origin === location.origin || a.closest(".suite-bar, .hero-steps, .hero-guide, .banner, .aside-nav");
+        if (!suite || reduced()) return;
+        e.preventDefault();
+        cover().then(function () {
+          if (to.origin === location.origin) { try { sessionStorage.setItem("px", "1"); } catch (x) {} }
+          else to.searchParams.set("px", "1");
+          location.assign(to.href);
+        });
+      });
+
+      // human / agent view: the page as markdown, from the same server
+      var md = document.querySelector('link[rel="alternate"][type="text/markdown"]');
+      var pre = document.querySelector(".agent-md");
+      var loaded = false;
+      function loadMd() {
+        if (loaded || !md || !pre) return Promise.resolve();
+        return fetch(md.getAttribute("href")).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+          .then(function (t) { pre.textContent = t; loaded = true; })
+          .catch(function () { pre.textContent = "Markdown unavailable right now: " + md.getAttribute("href"); });
+      }
+      var radios = Array.prototype.slice.call(document.querySelectorAll('.sm-switch input[name="sm-view"]'));
+      function sync() { radios.forEach(function (r) { r.checked = r.value === (root.dataset.view === "agent" ? "agent" : "human"); }); }
+      sync();
+      if (root.dataset.view === "agent") loadMd();
+      radios.forEach(function (r) {
+        r.addEventListener("change", function () {
+          if (!r.checked) return;
+          var agent = r.value === "agent";
+          Promise.all([cover(), agent ? loadMd() : null]).then(function (res) {
+            if (agent) root.dataset.view = "agent"; else delete root.dataset.view;
+            store.set("view", agent ? "agent" : "human");
+            scrollTo(0, 0);
+            return reveal(res[0]);
+          });
+        });
+      });
+
+      // theme: an explicit choice wins, else the system setting
+      var btn = document.querySelector(".sm-theme");
+      var sys = matchMedia("(prefers-color-scheme: light)");
+      function label() { if (btn) btn.setAttribute("aria-label", "Switch to " + (root.dataset.theme === "light" ? "dark" : "light") + " theme"); }
+      label();
+      sys.addEventListener("change", function () { if (!store.get("theme")) { root.dataset.theme = sys.matches ? "light" : "dark"; label(); } });
+      if (btn) btn.addEventListener("click", function () {
+        var next = root.dataset.theme === "light" ? "dark" : "light";
+        cover().then(function (o) { root.dataset.theme = next; store.set("theme", next); label(); return reveal(o); });
+      });
+    })();
   </script>
 </body>
 </html>
